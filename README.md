@@ -1,6 +1,8 @@
 # Pinescript-v6-strategy-with-Json-Webhook-output-example
 This PineScript V6 program places dollar cost averaging trades for 2 different strategies and uses arrays of arrays to store data. The strategies compute a signal with TP and SL with a passphrase for the receiving server to accept for security, then send the Json format Webhook with alert feature for the strategy.
 
+EXAMPLE code only as this strategy was probably overfit when I made it as a beginner, so only learn from the code, please!
+
 # LIVE ALERTS PYTH MT5 — TradingView Webhook Strategy
 
 A TradingView Pine Script strategy designed to generate live JSON alerts for an external Python / MT5 execution bridge.
