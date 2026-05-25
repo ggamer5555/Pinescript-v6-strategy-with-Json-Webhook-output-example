@@ -1,0 +1,1794 @@
+
+//@version=6
+strategy('LIVE ALERTS PYTH MT5',  overlay = true, calc_bars_count = 10000, default_qty_value = 100, calc_on_order_fills = false, process_orders_on_close=false, use_bar_magnifier = false, initial_capital=10000 , max_lines_count = 500, pyramiding = 999 , max_labels_count = 50, commission_value = 0.1, slippage = 5, default_qty_type = strategy.percent_of_equity, close_entries_rule = 'ANY')
+
+
+pastTf = barstate.isrealtime ? 1 : 0
+CurrentTf = barstate.isrealtime ? 0 : 1
+
+
+base_order  = input.float(1.4, title='norm base order', group = 'leverage') 
+base_order_L_BBW  = input.float(30, title='BBW base order', group = 'leverage') 
+//base_S_order_OI  = input.float(1.5, title='OI base sell order', group = 'leverage') 
+
+array_size_ht_OI = input.float(50, minval=0, step = 0.01, title="array size 2nd ema OI", group = "atr", inline = "TP5")
+ema_leng_OI = input.int(200, minval=1, step = 10, title="ema length_ROC_OI ", group = "atr", inline = "atr")
+atrperiod = input.int(3,'spread ATR period', group = 'atr')
+atrmulti = input.float(0.9,'spread ATR multiplier', group = 'atr')
+array_size_atr = input.int(1000,'atr array size', group = 'atr')
+
+length_bb = input.int(125, minval=1)
+maType_bb = input.string("EMA", "Basis MA Type", options = ["SMA", "EMA", "SMMA (RMA)", "WMA", "VWMA"])
+src_bb = input(close, title="Source ")
+mult_bb = input.float(3, minval=0.001, maxval=50, title="StdDev")
+
+length_bb_bbw = input.int(50, minval=1)
+maType_bb_bbw = input.string("EMA", "Basis MA Type _bbw", options = ["SMA", "EMA", "SMMA (RMA)", "WMA", "VWMA"])
+src_bb_bbw = input(close, title="Source _bbw")
+mult_bb_bbw = input.float(1.5, minval=0.001, maxval=50, title="StdDev _bbw")
+
+active1_bool = input.bool(true, "1 On/Off" , group = "trade levesl on/off 1-7", inline = "smartjoe")
+active1 = 0
+active2_bool = input.bool(true, "2 On/Off" , group = "trade levesl on/off 1-7", inline = "smartjoe")
+active2 = 0
+active3_bool = input.bool(true, "3 On/Off" , group = "trade levesl on/off 1-7", inline = "smartjoe")
+active3 = 0
+active4_bool = input.bool(true, "4 On/Off" , group = "trade levesl on/off 1-7", inline = "smartjoe")
+active4 = 0
+active5_bool = input.bool(true, "5 On/Off" , group = "trade levesl on/off 1-7", inline = "smartjoe")
+active5 = 0
+active6_bool = input.bool(true, "6 On/Off" , group = "trade levesl on/off 1-7", inline = "smartjoe")
+active6 = 0
+active7_bool = input.bool(false, "7 On/Off" , group = "trade levesl on/off 1-7", inline = "smartjoe")
+active7 = 0
+
+bbwactive1_bool = true //input.bool(true, "1 On/Off" , group = "bbw trade levesl on/off 1-7", inline = "smartjoe")
+bbwactive2_bool = true //input.bool(true, "2 On/Off" , group = "bbw trade levesl on/off 1-7", inline = "smartjoe")
+bbwactive3_bool = true //input.bool(true, "3 On/Off" , group = "bbw trade levesl on/off 1-7", inline = "smartjoe")
+bbwactive4_bool = true //input.bool(true, "4 On/Off" , group = "bbw trade levesl on/off 1-7", inline = "smartjoe")
+bbwactive5_bool = false //input.bool(false, "5 On/Off" , group = "bbw trade levesl on/off 1-7", inline = "smartjoe")
+bbwactive6_bool = false //input.bool(false, "6 On/Off" , group = "bbw trade levesl on/off 1-7", inline = "smartjoe")
+bbwactive7_bool = false //input.bool(false, "7 On/Off" , group = "bbw trade levesl on/off 1-7", inline = "smartjoe")
+
+
+normalSHORTS_allowed = input.string("yes", title="normalSHORTS allowed ?", options=["yes", "no"], group = "avaliable orders")
+normalLONGS_allowed = input.string("yes", title="normalLONGS allowed ?", options=["yes", "no"], group = "avaliable orders")
+//V_LONGS_allowed = input.string("no", title="V LONGS allowed ?", options=["yes", "no"], group = "avaliable orders")
+trend_trade_allowed = input.string("no", title="trend trade allowed ?", options=["yes", "no"], group = "avaliable orders")
+BBW_SHORT_ALLOWED = input.string("yes", title="BBW SHORT ALLOWED ?", options=["yes", "no"], group = "avaliable orders")
+BBW_LONG_ALLOWED = input.string("yes", title="BBW LONG ALLOWED ?", options=["yes", "no"], group = "avaliable orders")
+MED_trades_allowed = input.string("no", title="MED trades allowed ?", options=["yes", "no"], group = "avaliable orders")
+
+sunday_close = input("0000-1000:1" , group = "BBW days allowed", inline = "T")
+friday = input("1800-0000:6", group = "BBW days allowed", inline = "T")
+saturday = input("0000-0000:7", group = "BBW days allowed", inline = "T")
+sunday = input("0000-0400:1", group = "BBW days allowed", inline = "T")
+//session_0 = input("0000-0400:2", group = "BBW days allowed", inline = "T")
+
+
+//t_0 = time(timeframe.period, session_0)
+t0 = time(timeframe.period, sunday_close)
+t1 = time(timeframe.period, friday)
+t2 = time(timeframe.period, saturday)
+t3 = time(timeframe.period, sunday)
+
+
+//--------------------------------------------------------------------------------------------------------
+
+
+bbw_timeframe = input.timeframe(title="bbw timeframe 4h", defval="240", group = "dynamic ema", inline = "TP5")
+length_bbw_ema = input.int(20, minval=1, group = "BBW ", inline = "T1")
+BBW_src = close
+mult = 2 //input.float(2.0, minval=0.001, maxval=50, title="StdDev")
+basis_bbw_ema = ta.sma(BBW_src, length_bbw_ema)
+dev_bbw_ema = mult * ta.stdev(BBW_src, length_bbw_ema)
+upper_bbw_ema = basis_bbw_ema + dev_bbw_ema
+lower_bbw_ema = basis_bbw_ema - dev_bbw_ema
+bbw_bbw_ema = (upper_bbw_ema-lower_bbw_ema)/basis_bbw_ema
+bbw_multiplied_bbw_ema = bbw_bbw_ema * 100
+//plot(bbw_multiplied, "Bollinger Bands Width", color=#13848438)
+length_bbw = input.int(100, minval=1, group = "BBW ", inline = "T1")
+sma_bbw = ta.ema(bbw_multiplied_bbw_ema, length_bbw)
+ht_sma_bbw = request.security(syminfo.tickerid, bbw_timeframe, sma_bbw[pastTf])[CurrentTf]
+
+
+
+
+ema_Period = input.timeframe(title="dynamic EMA Timeframe", defval="15", group = "dynamic ema", inline = "TP5")
+len1 = input.int(800, minval=1, title="1 EMA LENGTH", group = "dynamic ema", inline = "TP5")
+
+ema1 = ta.ema(close, len1)
+ema2 = ta.ema(close, len1)
+ema3 = ta.ema(close, len1)
+ema4 = ta.ema(close, len1)
+ema5 = ta.ema(close, len1)
+ema6 = ta.ema(close, len1)
+ema7 = ta.ema(close, len1)
+
+min_dif_trade_small_S_1_S = input.float(0.1, minval = 0, title = "1 N trade dif S", group = "normal trade Settings S", inline = "T") * 0.01
+min_dif_trade_small_S_2_S = input.float(0.12, minval = 0, title = "2 N trade dif S", group = "normal trade Settings S", inline = "T") * 0.01
+min_dif_trade_small_S_3_S = input.float(0.12, minval = 0, title = "3 N trade dif S", group = "normal trade Settings S", inline = "T") * 0.01
+min_dif_trade_small_S_4_S = input.float(0.12, minval = 0, title = "4 N trade dif S", group = "normal trade Settings S", inline = "T") * 0.01
+min_dif_trade_small_S_5_S = input.float(0.2, minval = 0, title = "5 N trade dif S", group = "normal trade Settings S", inline = "T") * 0.01
+min_dif_trade_small_S_6_S = input.float(0.25, minval = 0, title = "6 N trade dif S", group = "normal trade Settings S", inline = "T") * 0.01
+min_dif_trade_small_S_7_S = input.float(0.25, minval = 0, title = "7 N trade dif S", group = "normal trade Settings S", inline = "T") * 0.01
+
+limitEntry_offset1_S = input.float(0.2, minval = 0, title = "1 L E OFF S", group = "normal trade Settings S", inline = "TP12") * 0.01
+limitEntry_offset2_S = input.float(0.3, minval = 0, title = "2 L E OFF S", group = "normal trade Settings S", inline = "TP12") * 0.01
+limitEntry_offset3_S = input.float(0.5, minval = 0, title = "3 L E OFF S", group = "normal trade Settings S", inline = "TP12") * 0.01
+limitEntry_offset4_S = input.float(0.8, minval = 0, title = "4 L E OFF S", group = "normal trade Settings S", inline = "TP12") * 0.01
+limitEntry_offset5_S = input.float(0.3, minval = 0, title = "5 L E OFF S", group = "normal trade Settings S", inline = "TP12") * 0.01
+limitEntry_offset6_S = input.float(0.4, minval = 0, title = "6 L E OFF S", group = "normal trade Settings S", inline = "TP12") * 0.01
+limitEntry_offset7_S = input.float(0.22, minval = 0, title = "7 L E OFF S", group = "normal trade Settings S", inline = "TP12") * 0.01
+
+min_dif_trade_small_1 = input.float(0.04, minval = 0, title = "1 N trade dif", group = "normal trade Settings", inline = "T") * 0.01
+min_dif_trade_small_2 = input.float(0.08, minval = 0, title = "2 N trade dif", group = "normal trade Settings", inline = "T") * 0.01
+min_dif_trade_small_3 = input.float(0.1, minval = 0, title = "3 N trade dif", group = "normal trade Settings", inline = "T") * 0.01
+min_dif_trade_small_4 = input.float(0.12, minval = 0, title = "4 N trade dif", group = "normal trade Settings", inline = "T") * 0.01
+min_dif_trade_small_5 = input.float(0.2, minval = 0, title = "5 N trade dif", group = "normal trade Settings", inline = "T") * 0.01
+min_dif_trade_small_6 = input.float(0.25, minval = 0, title = "6 N trade dif", group = "normal trade Settings", inline = "T") * 0.01
+min_dif_trade_small_7 = input.float(0.25, minval = 0, title = "7 N trade dif", group = "normal trade Settings", inline = "T") * 0.01
+
+limitEntry_offset1 = input.float(0.2, minval = 0, title = "1 L E OFF", group = "normal trade Settings", inline = "TP12") * 0.01
+limitEntry_offset2 = input.float(0.5, minval = 0, title = "2 L E OFF", group = "normal trade Settings", inline = "TP12") * 0.01
+limitEntry_offset3 = input.float(0.5, minval = 0, title = "3 L E OFF", group = "normal trade Settings", inline = "TP12") * 0.01
+limitEntry_offset4 = input.float(0.3, minval = 0, title = "4 L E OFF", group = "normal trade Settings", inline = "TP12") * 0.01
+limitEntry_offset5 = input.float(0.3, minval = 0, title = "5 L E OFF", group = "normal trade Settings", inline = "TP12") * 0.01
+limitEntry_offset6 = input.float(0.4, minval = 0, title = "6 L E OFF", group = "normal trade Settings", inline = "TP12") * 0.01
+limitEntry_offset7 = input.float(0.22, minval = 0, title = "7 L E OFF", group = "normal trade Settings", inline = "TP12") * 0.01
+
+tp1_input_perc1 = input.float(9, minval = 0, title = "1 SL %", group = "normal trade Settings", inline = "TP15") * 0.01
+tp1_input_perc2 = input.float(9, minval = 0, title = "2 SL %", group = "normal trade Settings", inline = "TP15") * 0.01
+tp1_input_perc3 = input.float(8, minval = 0, title = "3 SL %", group = "normal trade Settings", inline = "TP15") * 0.01
+tp1_input_perc4 = input.float(8, minval = 0, title = "4 SL %", group = "normal trade Settings", inline = "TP15") * 0.01
+tp1_input_perc5 = input.float(8, minval = 0, title = "5 SL %", group = "normal trade Settings", inline = "TP15") * 0.01
+tp1_input_perc6 = input.float(8, minval = 0, title = "6 SL %", group = "normal trade Settings", inline = "TP15") * 0.01
+tp1_input_perc7 = input.float(8, minval = 0, title = "7 SL %", group = "normal trade Settings", inline = "TP15") * 0.01
+
+P_ema1 =input.float(0.045, minval=0.0, title="1 % f EMA", group = "normal trade Settings", inline = "TP19", step = 0.001)
+P_ema2 =input.float(0.045, minval=0.0, title="2 % f EMA", group = "normal trade Settings", inline = "TP19", step = 0.001)
+P_ema3 =input.float(0.03, minval=0.0, title="3 % f EMA", group = "normal trade Settings", inline = "TP19", step = 0.001)
+P_ema4 =input.float(0.02, minval=0.0, title="4 % f EMA", group = "normal trade Settings", inline = "TP19", step = 0.001)
+P_ema5 =input.float(0.035, minval=0.0, title="5 % f EMA", group = "normal trade Settings", inline = "TP19", step = 0.001)
+P_ema6 =input.float(0.04, minval=0.0, title="6 % f EMA", group = "normal trade Settings", inline = "TP19", step = 0.001)
+P_ema7 =input.float(0.02, minval=0.0, title="7 % f EMA", group = "normal trade Settings", inline = "TP19", step = 0.001)
+
+length1 = input.int(65, minval=1, title="1 leng BBW ", group = "BBW", inline = "T17")
+
+bbw_input_change1 = input.float(0.62, minval=0, step = 0.01, title="1 int change BBW", group = "BBW", inline = "T10")
+bbw_input_change2 = input.float(0.62, minval=0, step = 0.01, title="2 int change BBW", group = "BBW", inline = "T10")
+bbw_input_change3 = input.float(0.62, minval=0, step = 0.01, title="3 int change BBW", group = "BBW", inline = "T10")
+bbw_input_change4 = input.float(0.62, minval=0, step = 0.01, title="4 int change BBW", group = "BBW", inline = "T10")
+bbw_input_change5 = input.float(0.5, minval=0, step = 0.01, title="5 int change BBW", group = "BBW", inline = "T10")
+bbw_input_change6 = input.float(0.5, minval=0, step = 0.01, title="6 int change BBW", group = "BBW", inline = "T10")
+bbw_input_change7 = input.float(0.5, minval=0, step = 0.01, title="7 int change BBW", group = "BBW", inline = "T10")
+
+BBW_stop_loss1 = input.float(3, minval = 0, title = "1 SL%", group = "BBW", inline = "TP18") * 0.01
+BBW_stop_loss2 = input.float(3, minval = 0, title = "2 SL%", group = "BBW", inline = "TP18") * 0.01
+BBW_stop_loss3 = input.float(3, minval = 0, title = "3 SL%", group = "BBW", inline = "TP18") * 0.01
+BBW_stop_loss4 = input.float(3, minval = 0, title = "4 SL%", group = "BBW", inline = "TP18") * 0.01
+BBW_stop_loss5 = input.float(3, minval = 0, title = "5 SL%", group = "BBW", inline = "TP18") * 0.01
+BBW_stop_loss6 = input.float(3, minval = 0, title = "6 SL%", group = "BBW", inline = "TP18") * 0.01
+BBW_stop_loss7 = input.float(3, minval = 0, title = "7 SL%", group = "BBW", inline = "TP18") * 0.01
+
+length2 = length1
+length3 = length1
+length4 = length1
+length5 = length1
+length6 = length1
+length7 = length1
+
+BBW_entryLimit_offset1 = input.float(0.4, minval = 0, title = "1 LI ENT OF", group = "BBW", inline = "T1") * 0.01
+BBW_entryLimit_offset2 = input.float(0.4, minval = 0, title = "2 LI ENT OF", group = "BBW", inline = "T1") * 0.01
+BBW_entryLimit_offset3 = input.float(0.4, minval = 0, title = "3 LI ENT OF", group = "BBW", inline = "T1") * 0.01
+BBW_entryLimit_offset4 = input.float(0.4, minval = 0, title = "4 LI ENT OF", group = "BBW", inline = "T1") * 0.01
+BBW_entryLimit_offset5 = input.float(0.4, minval = 0, title = "5 LI ENT OF", group = "BBW", inline = "T1") * 0.01
+BBW_entryLimit_offset6 = input.float(0.4, minval = 0, title = "6 LI ENT OF", group = "BBW", inline = "T1") * 0.01
+BBW_entryLimit_offset7 = input.float(0.4, minval = 0, title = "7 LI ENT OF", group = "BBW", inline = "T1") * 0.01
+
+BBW_entryLimit_offset = (0.125) * 0.01
+BBW_stop_loss = (3) * 0.01
+bbw_input_change = (0.62)
+length = (65)
+P_C_ema = (1.01)
+P_ema= (1.04)
+tp1_input_perc = (13) * 0.01
+limitEntry_offset = (0.135) * 0.01
+min_dif_trade_small = (0.16) * 0.01
+ema_dynamic = ta.ema(close, 240)
+sma_bbw_color = #fdfdfd8c
+limitEntry_offset_S = (0.135) * 0.01
+min_dif_trade_small_S = (0.16) * 0.01
+
+
+pink_h_line = 4 //input.float(4, minval=0, step = 0.01, title="1 pink H line", group = "dynamic ema", inline = "TP5")
+if ht_sma_bbw <= pink_h_line
+    ema_dynamic := ema1
+    min_dif_trade_small_S := min_dif_trade_small_S_1_S
+    limitEntry_offset_S := limitEntry_offset1_S
+    min_dif_trade_small := min_dif_trade_small_1
+    limitEntry_offset := limitEntry_offset1
+    tp1_input_perc := tp1_input_perc1
+    P_ema := P_ema1
+    //P_C_ema := P_C_ema1
+    length := length1
+    bbw_input_change := bbw_input_change1
+    BBW_stop_loss := BBW_stop_loss1
+    BBW_entryLimit_offset := BBW_entryLimit_offset1
+    sma_bbw_color := #ea02ff
+    active1 := 1
+
+green_h_line = 8// input.float(8, minval=0, step = 0.01, title="2 green H line", group = "dynamic ema", inline = "TP5")
+if ht_sma_bbw <= green_h_line and ht_sma_bbw > pink_h_line
+    ema_dynamic := ema2
+    min_dif_trade_small_S := min_dif_trade_small_S_2_S
+    limitEntry_offset_S := limitEntry_offset2_S
+    min_dif_trade_small := min_dif_trade_small_2
+    limitEntry_offset := limitEntry_offset2
+    tp1_input_perc := tp1_input_perc2
+    P_ema := P_ema2
+    //P_C_ema := P_C_ema2
+    length := length2
+    bbw_input_change := bbw_input_change2
+    BBW_stop_loss := BBW_stop_loss2
+    BBW_entryLimit_offset := BBW_entryLimit_offset2
+    sma_bbw_color := #20ff02
+    active2 := 1
+
+darkblue_h_line = 11 //input.float(11, minval=0, step = 0.01, title="3 dark blue H line", group = "dynamic ema", inline = "TP5")
+if ht_sma_bbw <= darkblue_h_line and ht_sma_bbw > green_h_line
+    ema_dynamic := ema3
+    min_dif_trade_small_S := min_dif_trade_small_S_3_S
+    limitEntry_offset_S := limitEntry_offset3_S
+    min_dif_trade_small := min_dif_trade_small_3
+    limitEntry_offset := limitEntry_offset3
+    tp1_input_perc := tp1_input_perc3
+    P_ema := P_ema3
+    //P_C_ema := P_C_ema3
+    length := length3
+    bbw_input_change := bbw_input_change3
+    BBW_stop_loss := BBW_stop_loss3
+    BBW_entryLimit_offset := BBW_entryLimit_offset3
+    sma_bbw_color := #1b02ff
+    active3 := 1
+
+red_h_line = 14 //input.float(14, minval=0, step = 0.01, title="4 red H line", group = "dynamic ema", inline = "TP5")
+if ht_sma_bbw <= red_h_line and ht_sma_bbw > darkblue_h_line
+    ema_dynamic := ema4
+    min_dif_trade_small_S := min_dif_trade_small_S_4_S
+    limitEntry_offset_S := limitEntry_offset4_S
+    min_dif_trade_small := min_dif_trade_small_4
+    limitEntry_offset := limitEntry_offset4
+    tp1_input_perc := tp1_input_perc4
+    P_ema := P_ema4
+    //P_C_ema := P_C_ema4
+    length := length4
+    bbw_input_change := bbw_input_change4
+    BBW_stop_loss := BBW_stop_loss4
+    BBW_entryLimit_offset := BBW_entryLimit_offset4
+    sma_bbw_color := #ff0202
+    active4 := 1
+
+orange_h_line = 20 //input.float(20, minval=0, step = 0.01, title="5 orange H line", group = "dynamic ema", inline = "TP5")
+if ht_sma_bbw <= orange_h_line and ht_sma_bbw > red_h_line
+    ema_dynamic := ema5
+    min_dif_trade_small_S := min_dif_trade_small_S_5_S
+    limitEntry_offset_S := limitEntry_offset5_S
+    min_dif_trade_small := min_dif_trade_small_5
+    limitEntry_offset := limitEntry_offset5
+    tp1_input_perc := tp1_input_perc5
+    P_ema := P_ema5
+    //P_C_ema := P_C_ema5
+    length := length5
+    bbw_input_change := bbw_input_change5
+    BBW_stop_loss := BBW_stop_loss5
+    BBW_entryLimit_offset := BBW_entryLimit_offset5
+    sma_bbw_color := #ff7402
+    active5 := 1
+    
+c6_h_line = 28 //input.float(24, minval=0, step = 0.01, title="6 c6 H line", group = "dynamic ema", inline = "TP5")
+if ht_sma_bbw <= c6_h_line and ht_sma_bbw > orange_h_line
+    ema_dynamic := ema6
+    min_dif_trade_small_S := min_dif_trade_small_S_6_S
+    limitEntry_offset_S := limitEntry_offset6_S
+    min_dif_trade_small := min_dif_trade_small_6
+    limitEntry_offset := limitEntry_offset6
+    tp1_input_perc := tp1_input_perc6
+    P_ema := P_ema6
+    //P_C_ema := P_C_ema6
+    length := length6
+    bbw_input_change := bbw_input_change6
+    BBW_stop_loss := BBW_stop_loss6
+    BBW_entryLimit_offset := BBW_entryLimit_offset6
+    sma_bbw_color := #ffd102
+    active6 := 1
+
+c7_h_line = 34 //input.float(28, minval=0, step = 0.01, title="7 c7 H line", group = "dynamic ema", inline = "TP5")
+if ht_sma_bbw > c6_h_line                          //ht_sma_bbw <= c7_h_line and ht_sma_bbw > c6_h_line
+    ema_dynamic := ema7
+    min_dif_trade_small_S := min_dif_trade_small_S_7_S
+    limitEntry_offset_S := limitEntry_offset7_S
+    min_dif_trade_small := min_dif_trade_small_7
+    limitEntry_offset := limitEntry_offset7
+    tp1_input_perc := tp1_input_perc7
+    P_ema := P_ema7
+    //P_C_ema := P_C_ema7
+    length := length7
+    bbw_input_change := bbw_input_change7
+    BBW_stop_loss := BBW_stop_loss7
+    BBW_entryLimit_offset := BBW_entryLimit_offset7
+    sma_bbw_color := #ff0263
+    active7 := 1
+
+// {{plot_0}}
+
+ht_ema = request.security(syminfo.tickerid, ema_Period, ema_dynamic[pastTf])[CurrentTf]
+//plot(ht_ema, color=sma_bbw_color , linewidth = 3, title = 'higher TF dynamic ema')
+// {{plot_1}}
+array_size_ht = input.float(5, minval=0, step = 0.01, title="7 c7 H line", group = "htema array size", inline = "TP5")
+var float [] ht_ema_average = array.new_float(1,0)
+array.push(ht_ema_average, ht_ema)
+if array.size(ht_ema_average) > array_size_ht
+    array.shift(ht_ema_average)
+
+ht_ema_color2 = #fdfdfd8c
+ht_ema_trend = 0
+
+if array.avg(ht_ema_average) < ht_ema
+    ht_ema_color2 := #4aff02
+    ht_ema_trend := 1
+if array.avg(ht_ema_average) > ht_ema
+    ht_ema_color2 := #ff0202
+    ht_ema_trend := -1
+
+
+plot(ht_ema, color=ht_ema_color2 , linewidth = 3, title = 'higher TF dynamic ema')
+plot(P_C_ema, color=sma_bbw_color , linewidth = 3, title = 'P_C_ema')
+
+basis = ta.sma(BBW_src, length)
+dev = mult * ta.stdev(BBW_src, length)
+upper = basis + dev
+lower = basis - dev
+bbw = (upper-lower)/basis
+bbw_multiplied = bbw * 100
+//plot(bbw_multiplied, "Bollinger Bands Width", color=#13848438)
+
+
+BBW_B_color = color.rgb(0, 0, 0, 100)
+BBW_active = 0
+if bbw_multiplied <= bbw_input_change
+    BBW_B_color := color.rgb(255, 255, 255, 66)
+    BBW_active := 1
+//bgcolor(BBW_B_color)
+
+testbgc = color.rgb(255, 255, 255, 100)
+
+
+//-------------------------------------------------------------------------------------------------------------
+
+
+multipler_bolly_width = input.float(100, minval=0, step = 0.01, title="multipler bolly width")
+//bbw_timeframe = input.timeframe(title="bbw timeframe 4h", defval="240", group = "Settings", inline = "TP5")
+
+bolinger_b_width = input.float(4, minval=0.1, title = 'BBW width', inline = 'bolly bands width')
+length_volatil = input.int(50, minval=1, inline = 'bolly bands width')
+src1 = input(close, title="Source")
+mult1 = input.float(2.0, minval=0.001, maxval=50, title="StdDev", inline = 'bolly bands width')
+basis1 = ta.sma(src1, length_volatil)
+dev1 = mult1 * ta.stdev(src1, length_volatil)
+
+dev_ht = request.security(syminfo.tickerid, bbw_timeframe, dev1[pastTf])[CurrentTf]
+basis_ht = request.security(syminfo.tickerid, bbw_timeframe, basis1[pastTf])[CurrentTf]
+
+upper1 = basis_ht + dev_ht
+lower1 = basis_ht - dev_ht
+up_band = request.security(syminfo.tickerid, bbw_timeframe, upper1[pastTf])[CurrentTf]
+bellow_band = request.security(syminfo.tickerid, bbw_timeframe, lower1[pastTf])[CurrentTf]
+
+offsetafk = input.int(0, "Offset", minval = -500, maxval = 500, inline = 'bolly bands width')
+bbw1 = (upper1-lower1)/basis1 
+
+bbw_multiplied1 = bbw1 * 100
+
+bbw_color = #fdfdfd8c
+if bbw_multiplied1 > bolinger_b_width
+    bbw_color := #ff0263
+//
+volatility_line_n = bbw_multiplied1 * multipler_bolly_width
+volatility_line_color = #aa9fa3a2
+
+volatility_line = request.security(syminfo.tickerid, bbw_timeframe, volatility_line_n[pastTf])[CurrentTf]
+
+//plot(basis1, "Basis", color=#FF6D00, offset = offsetafk)
+//p1 = plot(up_band, "Upper", color=bbw_color, offset = offsetafk)
+//p2= plot(bellow_band, "Lower", color=bbw_color, offset = offsetafk)
+//fill(p1, p2, title = "Background", color=color.rgb(33, 149, 243, 94))
+
+bbw_line_3 = 2.6//input.float(2.6, minval=0, step = 0.01, title="1 pink H line") * multipler_bolly_width
+//line.new(bar_index, bbw_line_3, bar_index + 1, bbw_line_3, extend=extend.both, color = #ea02ff, width = 1)
+bbw_line_2 = 3.4//input.float(3.4, minval=0, step = 0.01, title="1 pink H line") * multipler_bolly_width
+//line.new(bar_index, bbw_line_2, bar_index + 1, bbw_line_2, extend=extend.both, color = #ea02ff, width = 1)
+bbw_line_1 = 4.5//input.float(4.5, minval=0, step = 0.01, title="1 pink H line") * multipler_bolly_width
+//line.new(bar_index, bbw_line_1, bar_index + 1, bbw_line_1, extend=extend.both, color = #ea02ff, width = 1)
+bbw_line = 5.9//input.float(5.9, minval=0, step = 0.01, title="1 pink H line") * multipler_bolly_width
+//line.new(bar_index, bbw_line, bar_index + 1, bbw_line, extend=extend.both, color = #ea02ff, width = 1)
+bbw_line1 = 7.5//input.float(7.5, minval=0, step = 0.01, title="1 pink H line") * multipler_bolly_width
+//line.new(bar_index, bbw_line1, bar_index + 1, bbw_line1, extend=extend.both, color = #ea02ff, width = 1)
+bbw_line2 = 10//input.float(10, minval=0, step = 0.01, title="1 pink H line") * multipler_bolly_width
+//line.new(bar_index, bbw_line2, bar_index + 1, bbw_line2, extend=extend.both, color = #ea02ff, width = 1)
+bbw_line3 = 13//input.float(13, minval=0, step = 0.01, title="1 pink H line") * multipler_bolly_width
+//line.new(bar_index, bbw_line3, bar_index + 1, bbw_line3, extend=extend.both, color = #ea02ff, width = 1)
+bbw_line4 = 16.9//input.float(16.9, minval=0, step = 0.01, title="1 pink H line") * multipler_bolly_width
+//line.new(bar_index, bbw_line4, bar_index + 1, bbw_line4, extend=extend.both, color = #ea02ff, width = 1)
+bbw_line5 = 21.97//input.float(21.97, minval=0, step = 0.01, title="1 pink H line") * multipler_bolly_width
+//line.new(bar_index, bbw_line5, bar_index + 1, bbw_line5, extend=extend.both, color = #ea02ff, width = 1)
+bbw_line6 = 28.561//input.float(28.561, minval=0, step = 0.01, title="1 pink H line") * multipler_bolly_width
+//line.new(bar_index, bbw_line6, bar_index + 1, bbw_line6, extend=extend.both, color = #ea02ff, width = 1)
+bbw_line7 = 37.1293//input.float(37.1293, minval=0, step = 0.01, title="1 pink H line") * multipler_bolly_width
+//line.new(bar_index, bbw_line7, bar_index + 1, bbw_line7, extend=extend.both, color = #ea02ff, width = 1)
+bbw_line8 = 48.26809//input.float(48.26809, minval=0, step = 0.01, title="1 pink H line") * multipler_bolly_width
+//line.new(bar_index, bbw_line8, bar_index + 1, bbw_line8, extend=extend.both, color = #ea02ff, width = 1)
+
+
+
+
+if volatility_line > bbw_line_3 and volatility_line <= bbw_line_2 or volatility_line < bbw_line_3
+    volatility_line_color := #02ff02
+    //P_C_ema := P_C_EMA_VOLA1
+if volatility_line > bbw_line_2 and volatility_line <= bbw_line_1
+    volatility_line_color := #02ff02
+    //P_C_ema := P_C_EMA_VOLA2
+if volatility_line > bbw_line_1 and volatility_line <= bbw_line
+    volatility_line_color := #02ff02
+    //P_C_ema := P_C_EMA_VOLA3
+if volatility_line > bbw_line and volatility_line <= bbw_line1
+    volatility_line_color := #02ff02
+    //P_C_ema := P_C_EMA_VOLA4
+if volatility_line > bbw_line1 and volatility_line <= bbw_line2
+    volatility_line_color := #02ff02
+    //P_C_ema := P_C_EMA_VOLA5
+if volatility_line > bbw_line2 and volatility_line <= bbw_line3
+    volatility_line_color := #02ff02
+    //P_C_ema := P_C_EMA_VOLA6
+if volatility_line > bbw_line3 and volatility_line <= bbw_line4
+    volatility_line_color := #ff0202
+    //P_C_ema := P_C_EMA_VOLA7
+if volatility_line > bbw_line4 and volatility_line <= bbw_line5
+    volatility_line_color := #ff0202
+    //P_C_ema := P_C_EMA_VOLA8
+if volatility_line > bbw_line5 and volatility_line <= bbw_line6
+    volatility_line_color := #ff0202
+    //P_C_ema := P_C_EMA_VOLA9
+if volatility_line > bbw_line6 and volatility_line <= bbw_line7
+    volatility_line_color := #ff0202
+    //P_C_ema := P_C_EMA_VOLA10
+if volatility_line > bbw_line7 and volatility_line <= bbw_line8
+    volatility_line_color := #ff0202
+    //P_C_ema := P_C_EMA_VOLA11
+if volatility_line > bbw_line8
+    volatility_line_color := #ff0202
+    //P_C_ema := P_C_EMA_VOLA12
+
+//plot(volatility_line, "volatility line", color=volatility_line_color)
+
+//-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+//5 min chart is optimal settings
+mmm=0
+abc_m=minute
+abc_m %= 60
+if abc_m == 0
+    mmm := 222
+
+//plot(abc_m)
+//plot(mmm,color=color.white)
+
+
+var float EMA_250_o = 0
+var float EMA_250 = 0
+var float bos_ema_o = 0
+var float bos_ema = 0
+
+len = input.int(62, minval=1, title="EMA 4H tf ", group = "no volatility trades", inline = "TP")
+//src = close
+EMA_BOS_Period = input.timeframe(title="EMA & BOS TF 4h", defval="240", group = "no volatility trades")
+EMA_250_o := ta.ema(close, len)
+EMA_250 := request.security(syminfo.tickerid, EMA_BOS_Period, EMA_250_o)
+
+M_line = input.int(1600, minval=300,maxval=4000, title="above line = consolidation", group = "no volatility trades")
+min_line = input.int(1200, minval=300,maxval=4000, title="IF price above THEN will be CUT IF BOS", group = "no volatility trades")
+
+len12 = input.int(7, minval=1, title="Length of BOS price", group = "no volatility trades", inline = "TP")
+src12 = close
+bos_ema_o := ta.ema(src12, len12)
+bos_ema := request.security(syminfo.tickerid, EMA_BOS_Period, bos_ema_o[pastTf])[CurrentTf]
+
+//plot(bos_ema, title="EMA", color=color.blue)
+
+ma(source, length, type) =>
+    switch type
+        "SMA" => ta.sma(source, length)
+        "EMA" => ta.ema(source, length)
+        "SMMA (RMA)" => ta.rma(source, length)
+        "WMA" => ta.wma(source, length)
+        "VWMA" => ta.vwma(source, length)
+
+
+// //--------------------------------------------------------------------------------------------------------------------------
+
+// Constants
+color CLEAR = color.rgb(0,0,0,100)
+
+// Inputs
+swingSize = input.int(50, 'Swing Length', tooltip='The number of left and right bars checked when searching for a swing point. Higher value = less swing points plotted and lower value = more swing points plotted.', group='BOS Settings' ,inline = "Th")
+//bosConfType = input.string('Candle Close', 'BOS Confirmation', ['Candle Close', 'EMA'], tooltip='Choose whether candle close/wick above previous swing point counts as a BOS.')
+choch = false //input.bool(false, 'Show CHoCH', tooltip='Renames the first counter trend BOS to CHoCH' )
+showSwing = true //input.bool(true, 'Show Swing Points', tooltip='Show or hide HH, LH, HL, LL')
+
+showHalf = false  //input.bool(false, 'Show 0.5 Retracement Level', group='0.5 Retracement Level', tooltip='Show a possible 0.5 retracement level between the swing highs and lows of an expansion move.')
+halfColor = color.rgb(41, 39, 176) //input.color(color.rgb(41, 39, 176), 'Color', group='0.5 Retracement Level')
+halfStyle = string('Solid')//input.string('Solid', 'Line Style', ['Solid', 'Dashed', 'Dotted'])// group='0.5 Retracement Level')
+halfWidth = 1// input.int(1, 'Width', minval=1, group='0.5 Retracement Level')
+
+bosColor = input.color(color.rgb(112, 114, 119), 'Color', group='BOS Settings',inline = "Th")
+bosStyle = input.string('Dashed', 'Line Style', ['Solid', 'Dashed', 'Dotted'], group='BOS Settings',inline = "Th")
+bosWidth = input.int(1, 'Width', minval=1, group='BOS Settings',inline = "Th")
+
+
+// Functions
+lineStyle(x) =>
+    switch x
+        'Solid' => line.style_solid
+        'Dashed' => line.style_dashed
+        'Dotted' => line.style_dotted
+
+
+// Calculations
+
+//Finding high and low pivots
+var float pivhigh = 0
+var float pivlow = 0
+var float pivhigh_ht = 0
+var float pivlow_ltf = 0
+
+
+pivhigh := ta.pivothigh(bos_ema, swingSize, swingSize)
+pivlow := ta.pivotlow(bos_ema, swingSize, swingSize)
+
+pivhigh_ht := request.security(syminfo.tickerid, EMA_BOS_Period, pivhigh[pastTf])[CurrentTf]
+pivlow_ltf := request.security(syminfo.tickerid, EMA_BOS_Period, pivlow[pastTf])[CurrentTf]
+
+//Tracking the previous swing levels to determine hh lh hl ll
+var float prevHigh = na
+var float prevLow = na
+var int prevHighIndex = na
+var int prevLowIndex = na
+
+//Tracking whether previous levels have been breached
+var bool highActive = false
+var bool lowActive = false
+
+bool hh = false
+bool lh = false
+bool hl = false
+bool ll = false
+
+//Variable to track the previous swing type, used later on to draw 0.5 Retracement Levels (HH = 2, LH = 1, HL = -1, LL = -2)
+var int prevSwing = 0
+
+
+if not na(pivhigh_ht)
+    if pivhigh_ht >= prevHigh
+        hh := true
+        prevSwing := 2
+    else
+        lh := true
+        prevSwing := 1
+    prevHigh := pivhigh_ht
+    highActive := true
+    prevHighIndex := bar_index - swingSize
+
+if not na(pivlow_ltf)
+    if pivlow_ltf >= prevLow
+        hl := true
+        prevSwing := -1
+    else
+        ll := true
+        prevSwing := -2
+    prevLow := pivlow_ltf
+    lowActive := true
+    prevLowIndex := bar_index - swingSize
+
+//Generating the breakEMA_250 signals
+bool highBroken = false
+bool lowBroken = false
+
+//Tracking prev breakEMA_250
+var int prevBreakEMA_250Dir = 0
+
+float highSrc = bos_ema 
+float lowSrc = bos_ema
+
+if highSrc > prevHigh and highActive
+    highBroken := true
+    highActive := false
+if lowSrc < prevLow and lowActive
+    lowBroken := true
+    lowActive := false
+
+
+
+
+array_size_EMA = float(1)
+var float [] OR_value = array.new_float(1,0)
+if array.size(OR_value) > array_size_EMA
+    array.shift(OR_value)
+
+var float [] OR_value_add = array.new_float(1,0)
+if array.size(OR_value_add) > array_size_EMA
+    array.shift(OR_value_add)
+
+var float [] OR_value_minus = array.new_float(1,0)
+if array.size(OR_value_minus) > array_size_EMA
+    array.shift(OR_value_minus)
+
+
+
+
+ema_p = (0.2) * 0.01 //input.float(0.2, minval = 0.00, title = "EMA % change", group = "no volatility trades", inline = "TP") * 0.01
+array_size = 480 //input.float(480, minval = 0.00, title = "array size", group = "no volatility trades", inline = "TP")
+P_add_minus = 0.0125 //input.float(0.0125, minval = 0.0001, maxval = 0.05, title = "% change array size", group = "no volatility trades", inline = "TP", step = 0.001)
+
+var float [] ema_average = array.new_float(1,0)
+array.push(ema_average, EMA_250)
+if array.size(ema_average) > array_size
+    array.shift(ema_average)
+
+ema_colour = color.rgb(247, 247, 247)
+if (array.avg(ema_average) * (1+ema_p)) < EMA_250
+    ema_colour := color.rgb(0, 255, 8)
+    if abc_m == 0 // and abc_m and Hcount_2 == 0
+        if array.get(OR_value,0) < 100
+            array.set(OR_value_add, 0, 0)
+            array.set(OR_value, 0, 0)
+        else
+            array.set(OR_value_add, 0 ,(array.get(OR_value_add,0) / ((P_add_minus/2) + 1) ))  // dont fix this calculation.. i know the percentage isnt calculated correclty 
+            array.set(OR_value, 0 ,(array.get(OR_value,0) / ((P_add_minus/2) + 1) ))  // dont fix this calculation.. i know the percentage isnt calculated correclty 
+else 
+    if (array.avg(ema_average) / (1+ema_p)) > EMA_250
+        ema_colour := color.rgb(255, 8, 0)
+        if abc_m == 0 // and abc_m and Hcount_2 == 0
+            if array.get(OR_value,0) < 100
+                array.set(OR_value_add, 0, 0)
+                array.set(OR_value, 0, 0)
+            else
+                array.set(OR_value_add, 0 ,(array.get(OR_value_add,0) / ((P_add_minus/2) + 1) )) // dont fix this calculation.. i know the percentage isnt calculated correclty 
+                array.set(OR_value, 0 ,(array.get(OR_value,0) / ((P_add_minus/2) + 1) ))  // dont fix this calculation.. i know the percentage isnt calculated correclty 
+
+    else 
+        ema_colour := color.rgb(247, 247, 247)
+        if abc_m == 0// and abc_m and Hcount_2 == 0
+            if array.get(OR_value,0) < 100
+                array.set(OR_value,0 , 0)
+                array.set(OR_value_add,0 , 200)
+                array.set(OR_value, 0 , (array.get(OR_value,0) + array.get(OR_value_add,0)))
+            else
+                if array.get(OR_value,0) >= 4000
+                    array.set(OR_value, 0 , 4000)
+                    array.set(OR_value_add, 0 , 4000)
+
+                else 
+                    array.set(OR_value_add, 0 ,(array.get(OR_value_add,0) * (P_add_minus + 1) ))
+                    array.set(OR_value, 0 ,(array.get(OR_value,0) * (P_add_minus + 1)))//+ array.get(OR_value_add,0)))
+
+
+
+
+var hedgeAllow = array.from (0,0)
+OR_color = color.rgb(147, 147, 44)
+if array.get(OR_value,0) >= M_line
+    OR_color := color.white
+    array.push(hedgeAllow, 1)
+else
+    array.push(hedgeAllow, 0)
+
+if array.size(hedgeAllow) > 30
+    array.shift(hedgeAllow)
+
+//if array.max(hedgeAllow) == 1 // if in the last 30 bars/array the value is one meaning there is a white line= consolidation
+//plot(array.get(OR_value,0), linewidth = 3, color = OR_color)
+//
+
+//Generating the BOS Lines
+
+if highBroken
+    prevBreakEMA_250Dir := 1
+    if array.get(OR_value,0) >= min_line
+        array.set(OR_value, 0 , (min_line / 1.5)) //(array.get(OR_value,0) * 1.05 ))
+
+if lowBroken
+    prevBreakEMA_250Dir := -1
+    if array.get(OR_value,0) >= min_line
+        array.set(OR_value, 0 , (min_line / 1.5))
+
+
+
+//--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+orderIds = ""
+for idx = 0 to strategy.opentrades - 1
+	strSuffix = idx == strategy.opentrades - 1 ? "" : ", "
+	orderIds += strategy.opentrades.entry_id(idx) + strSuffix
+
+var float [] normOrder_active = array.new_float(5,0)
+var float [] bbwOrder_active = array.new_float(5,0)
+var float [] vOrder_active = array.new_float(5,0)
+
+no_active_small_trades = 0
+if str.contains(orderIds, 'Short') == false and str.contains(orderIds, 'Long') == false and str.contains(orderIds, 'longVsmall') == false and str.contains(orderIds, 'BBW L small') == false and str.contains(orderIds, 'BBW S small') == false and  str.contains(orderIds, 'long small') == false and  str.contains(orderIds, 'short small') == false
+    if array.get(normOrder_active, 0) == 0 and array.get(normOrder_active, 2) == 0 //array.get(vOrder_active, 0) == 0 and and array.get(bbwOrder_active, 2) == 0 and array.get(bbwOrder_active, 0) == 0
+        no_active_small_trades := 1
+
+no_active_small_trades_bbw = 0
+if array.get(bbwOrder_active, 2) == 0 and array.get(bbwOrder_active, 0) == 0 //array.get(vOrder_active, 0) == 0 and array.get(normOrder_active, 0) == 0 and array.get(normOrder_active, 2) == 0 and 
+    no_active_small_trades_bbw := 1
+
+
+no_active_med_trades = 0
+if str.contains(orderIds, 'Short') == false and str.contains(orderIds, 'Long') == false and str.contains(orderIds, 'short medium') == false and str.contains(orderIds, 'BBW S med') == false and str.contains(orderIds, 'BBW L med') == false and str.contains(orderIds, 'longVmed') == false and str.contains(orderIds, 'long medium') == false 
+    if array.get(normOrder_active, 1) == 0 and array.get(normOrder_active, 1) == 0 and array.get(normOrder_active, 3) == 0 and array.get(bbwOrder_active, 1) == 0 and array.get(bbwOrder_active, 3) == 0
+        no_active_med_trades := 1
+    
+//--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//required for simple imbalence
+
+//min_dif_trade_small = input.float(0.16, minval = 0, title = "min trade dif small", group = "normal trade Settings", inline = "TP1") * 0.01
+//min_dif_trade_medium = input.float(0.16, minval = 0, title = "min trade dif medium", group = "normal trade Settings", inline = "TP1") * 0.01
+min_dif_trade_medium = min_dif_trade_small
+//tp1_input_perc = input.float(13, minval = 0, title = "Stop loss %", group = "normal trade Settings", inline = "TP1") * 0.01
+//P_ema=input.float(1.04, minval=1, title="% f EMA orders allowed", group = "normal trade Settings", inline = "TP1", step = 0.001)
+//P_C_ema=input.float(1.01, minval=1, title="% Close under EMA", group = "normal trade Settings", inline = "TP1", step = 0.001)
+//limitEntry_offset = input.float(0.135, minval = 0, title = "LI ENT OF", group = "normal trade Settings", inline = "TP1") * 0.01
+
+// len1 = input.int(200, minval=1, title="EMA LENGTH", group = "Settings", inline = "TP1")
+// ema_Period = input.timeframe(title="EMA Timeframe", defval="60", group = "Settings", inline = "TP1")
+// ema1 = ta.ema(close, len1)
+// ht_ema = request.security(syminfo.tickerid, ema_Period, ema1)
+// plot(ht_ema,color=color.red,linewidth = 3)
+
+
+
+
+var float [] limitEntry_long = array.new_float(99,0)
+var float [] limitEntry_short = array.new_float(99,0)
+
+
+//------------------------------------------------------------------------------------------------------------------------
+
+float bear_imbalence = 0
+float bull_imbalence = 0
+
+float bull_imbalence_simple=0
+float bear_imbalence_simple=0
+
+var float [] limitClose1 = array.new_float(10,0)
+var float [] L_SLline = array.new_float(2,0)
+var float [] S_SLline = array.new_float(2,0)
+
+var float [] limitClose11 = array.new_float(10,0)
+
+var float [] order_side = array.new_float(2,0)
+var float [] Wprice = array.new_float(2,0)
+var float [] SL_price = array.new_float(2,0)
+
+var L_s_count= 0
+var L_M_count= 0
+var L_L_count= 0
+var S_s_count= 0
+var S_M_count= 0
+var S_L_count= 0
+
+SL_long = high * (1 + tp1_input_perc)
+SL_long_medium = high * (1 + tp1_input_perc)
+//plot(SL_long, title = 'normal SL short S', linewidth = 2, style =  plot.style_stepline, color=color.rgb(248, 186, 71, 80))
+//plot(SL_long_medium, title = 'normal SL short M', linewidth = 2, style =  plot.style_stepline, color=color.rgb(236, 248, 71, 100))
+
+strat = 0
+normal1S = 0
+normal2S = 0
+normal1L = 0
+normal2L = 0
+
+bbw1S = 0
+bbw2S = 0
+bbw1L = 0
+bbw2L = 0
+
+V1L = 0
+V2L = 0
+
+//------------------------------------------------------------------------------------------------------------------------
+
+
+min_dif = min_dif_trade_small  //input.float(0.1, minval = 0, title = "1 N trade dif", group = "normal trade Settings", inline = "T") * 0.01
+bars_back_S = input.int(7, 'SHORT lookback 0 - whatever bars back')
+bars_back = input.int(0, 'SHORT lookback 0 - whatever bars back')
+
+var lows = array.new_float(1,0)
+if array.size(lows) > bars_back
+    array.shift(lows)
+array.push(lows, low[1])
+
+var highs = array.new_float(1,0)
+if array.size(highs) > bars_back_S
+    array.shift(highs)
+array.push(highs, high[1])
+
+short_now = 0
+float bar = 0
+if close < array.min(lows) 
+    bar := (array.min(lows) + close) / 2
+    if close * (1 + min_dif) < bar
+        short_now := 1
+
+long_now = 0
+float bar_1 = 0
+if close > array.max(highs)
+    bar_1 := (array.max(highs) + close) / 2
+    if close * (1 - min_dif) > bar_1
+        long_now := 1
+
+// the greater th lookback accepted = more risk per trade
+
+
+
+close_bbw = 0
+float bbw_imbalence = 0
+if (na(t1)) and (na(t2)) and (na(t3)) and (na(t0)) // and (na(t_0))
+    // strategy.cancel('BBW L small')
+    // strategy.close('BBW L small')
+    // strategy.cancel('BBW L med')
+    // strategy.close('BBW L med')
+    // strategy.cancel('BBW S small')
+    // strategy.close('BBW S small')
+    // strategy.cancel('BBW S med')
+    // strategy.close('BBW S med')
+    array.set(bbwOrder_active, 1, 0)
+    array.set(bbwOrder_active, 0, 0)
+    array.set(bbwOrder_active, 2, 0)
+    array.set(bbwOrder_active, 3, 0)
+    close_bbw := 1
+
+
+
+//------------------------------------------------------------------------------------------------------------------------
+
+
+
+mabb(source_bb, length_bb, _type) =>
+    switch _type
+        "SMA" => ta.sma(source_bb, length_bb)
+        "EMA" => ta.ema(source_bb, length_bb)
+        "SMMA (RMA)" => ta.rma(source_bb, length_bb)
+        "WMA" => ta.wma(source_bb, length_bb)
+        "VWMA" => ta.vwma(source_bb, length_bb)
+
+basis_bb = ma(src_bb, length_bb, maType_bb)
+dev_bb = mult_bb * ta.stdev(src_bb, length_bb)
+upper_bb = basis_bb + dev_bb
+lower_bb = basis_bb - dev_bb
+//plot(basis, "Basis", color=#FF6D00)
+//p1_bb = plot(upper_bb, "Upper", color=#2f5ace)
+//p2_bb = plot(lower_bb, "Lower", color=#ff29ed)
+//fill(p1_bb, p2_bb, title = "Background", color=color.rgb(33, 150, 243, 95))
+
+
+// float normLev = 0
+// if MED_trades_allowed == 'yes'
+//     normLev := (math.max(math.round(strategy.equity * normleverage  / close , precision), 0)) / 2
+// else
+//     normLev := math.max(math.round(strategy.equity * normleverage  / close , precision), 0)
+
+//------------------------------------------------------------------------------------------------------------------------
+if long_now == 1 and close > lower_bb and  str.contains(orderIds, 'SSODCA') == false//and bbw_multiplied1 > bolinger_b_width
+    if (active1==1 and active1_bool==true) or (active2==1 and active2_bool==true) or (active3==1 and active3_bool==true) or (active4==1 and active4_bool==true)// or (active5==1 and active5_bool==true) or (active6==1 and active6_bool==true) or (active7==1 and active7_bool==true)
+        if normalSHORTS_allowed == 'yes' and ht_ema_trend == -1 
+            if array.get(OR_value,0) < M_line
+                if close > high[1] and ht_ema > (close * (1 + P_ema))
+                    if no_active_small_trades == 1 //if str.contains(orderIds, 'Short') == false and str.contains(orderIds, 'Long') == false and array.get(normOrder_active, 0) == 0 and str.contains(orderIds, 'short small') == false and str.contains(orderIds, 'long small') == false and str.contains(orderIds, 'BBW S small') == false and str.contains(orderIds, 'BBW L small') == false and str.contains(orderIds, 'longVsmall') == false
+                        mid_long_h1 = (high[1] + close) * 0.5
+                        if mid_long_h1 < (close * (1 - min_dif_trade_small_S))
+                            array.set(order_side, 0, 2)
+                            array.set(limitEntry_long, 0, close * (1 + limitEntry_offset_S))
+                            array.set(S_SLline, 0, SL_long)
+                            line.new(x1=bar_index, y1=mid_long_h1, x2=bar_index+5, y2=mid_long_h1, color = color.red, width = 3)
+                            bull_imbalence_simple := low * 0.98
+                            array.set(limitClose1, 0, mid_long_h1)
+                            array.set(limitClose11, 0, open)
+                            array.set(normOrder_active, 0, 1)
+                            Normal_S_S_alert_message = str.tostring(array.get(limitClose1, 0))
+                            //strategy.order(id = 'short small', direction=strategy.short, qty = normLev, limit = array.get(limitEntry_long, 0), stop = array.get(S_SLline, 0), alert_message=Normal_S_S_alert_message)
+                            //strategy.exit(id = "C S small", from_entry= 'short small', limit = array.get(limitClose1, 0), stop = array.get(S_SLline, 0))
+                            //L_s_count := L_s_count+1
+                            normal1S := 1
+                            array.set(Wprice, 0, array.get(limitEntry_long, 0))
+                            array.set(SL_price, 0, array.get(S_SLline, 0))
+
+if close <= array.get(limitClose1, 0)
+    // strategy.cancel('short small')
+    // strategy.close('short small')
+    array.set(normOrder_active, 0, 0)
+
+if close <= array.get(limitClose1, 1)
+    // strategy.cancel('short medium')
+    // strategy.close('short medium')
+    array.set(normOrder_active, 1, 0)
+
+if str.contains(orderIds, 'short small') == true
+    array.set(normOrder_active, 0, 0)
+
+// if str.contains(orderIds, 'short medium') == true
+//     array.set(normOrder_active, 1, 0)
+
+if high >= array.get(S_SLline, 0)
+    //strategy.cancel('short small')
+    //strategy.close('short small', 'S S hard SL')
+    array.set(normOrder_active, 0, 0)
+
+// if high >= array.get(S_SLline, 1)
+//     strategy.cancel('short medium')
+//     strategy.close('short medium', 'S M hard SL')
+//     array.set(normOrder_active, 1, 0)
+
+
+SL_short = low * (1 - tp1_input_perc)
+SL_short_medium = low * (1 - tp1_input_perc)
+//plot(SL_short, title = 'normal SL long S', linewidth = 2, style =  plot.style_stepline, color=color.rgb(71, 248, 124, 80))
+//plot(SL_short_medium, title = 'normal SL long M', linewidth = 2, style =  plot.style_stepline, color=color.rgb(71, 198, 248, 100))
+
+if short_now == 1 and close < upper_bb and  str.contains(orderIds, 'LSODCA') == false// bbw_multiplied1 > bolinger_b_width and 
+    if (active1==1 and active1_bool==true) or (active2==1 and active2_bool==true) or (active3==1 and active3_bool==true) or (active4==1 and active4_bool==true) or (active5==1 and active5_bool==true) or (active6==1 and active6_bool==true) or (active7==1 and active7_bool==true)
+        if normalLONGS_allowed == 'yes' and ht_ema_trend == 1 
+            if array.get(OR_value,0) < M_line
+                if close < low[1] and ht_ema < (close * (1 - P_ema))
+                    if no_active_small_trades == 1 //if str.contains(orderIds, 'Short') == false and str.contains(orderIds, 'Long') == false and array.get(normOrder_active, 2) == 0 and str.contains(orderIds, 'long small') == false and str.contains(orderIds, 'BBW S small') == false and str.contains(orderIds, 'BBW L small') == false and str.contains(orderIds, 'longVsmall') == false and str.contains(orderIds, 'short small') == false
+                        mid_short_h1 = (low[1] + close) * 0.5
+                        if mid_short_h1 > (close * (min_dif_trade_small + 1))
+                            array.set(order_side, 0, 1)
+                            array.set(limitEntry_short, 0, close * (1 - limitEntry_offset))
+                            array.set(L_SLline, 0, SL_short)
+                            line.new(x1=bar_index, y1=mid_short_h1, x2=bar_index+5, y2=mid_short_h1, color = color.rgb(43, 255, 0), width = 3)
+                            bear_imbalence_simple := low * 0.98
+                            array.set(limitClose1, 2, mid_short_h1)
+                            array.set(limitClose11, 2, open)
+                            array.set(normOrder_active, 2, 1)
+                            Normal_L_S_alert_message = str.tostring(array.get(limitClose1, 2))
+                            //strategy.order(id = 'long small', direction=strategy.long, qty = normLev, limit = array.get(limitEntry_short, 0), stop = array.get(L_SLline, 0), alert_message = Normal_L_S_alert_message)
+                            //strategy.exit(id = "C l small", from_entry= 'long small', limit = array.get(limitClose1, 2), stop = array.get(L_SLline, 0))
+                            //S_s_count := S_s_count+1
+                            normal1L := 1
+                            array.set(Wprice, 0, array.get(limitEntry_short, 0))
+                            array.set(SL_price, 0, array.get(L_SLline, 0))
+
+
+
+if close >= array.get(limitClose1, 2)
+    //strategy.cancel('long small')
+    //strategy.close('long small')
+    array.set(normOrder_active, 2, 0)
+// if close >= array.get(limitClose1, 3)
+//     strategy.cancel('long medium')
+//     strategy.close('long medium')
+//     array.set(normOrder_active, 3, 0)
+
+// if low <= (ht_ema / P_C_ema) 
+//     strategy.cancel('long small')
+//     strategy.cancel('long medium')
+//     strategy.close('long small')
+//     strategy.close('long medium')
+//     array.set(normOrder_active, 3, 0)
+//     array.set(normOrder_active, 2, 0)
+
+// if high >= (ht_ema * P_C_ema) 
+//     strategy.cancel('short small')
+//     strategy.cancel('short medium')
+//     strategy.close('short small')
+//     strategy.close('short medium')
+//     array.set(normOrder_active, 0, 0)
+//     array.set(normOrder_active, 1, 0)
+
+if ht_ema_trend == -1
+    // strategy.cancel('long small')
+    // strategy.cancel('long medium')
+    // strategy.close('long small')
+    // strategy.close('long medium')
+    array.set(normOrder_active, 3, 0)
+    array.set(normOrder_active, 2, 0)
+
+if ht_ema_trend == 1
+    // strategy.cancel('short small')
+    // strategy.cancel('short medium')
+    // strategy.close('short small')
+    // strategy.close('short medium')
+    array.set(normOrder_active, 0, 0)
+    array.set(normOrder_active, 1, 0)
+
+
+if str.contains(orderIds, 'long small') == true
+    array.set(normOrder_active, 2, 0)
+
+// if str.contains(orderIds, 'long medium') == true
+//     array.set(normOrder_active, 3, 0)
+
+
+if low <= array.get(L_SLline, 0)
+    //strategy.cancel('long small')
+    //strategy.close('long small', 'L S hard SL')
+    array.set(normOrder_active, 2, 0)
+
+// if low <= array.get(L_SLline, 1)
+//     strategy.cancel('long medium')
+//     strategy.close('long medium', 'L M hard SL')
+//     array.set(normOrder_active, 3, 0)
+
+
+// plot(bear_imbalence, color = color.rgb(9, 247, 17), linewidth = 2)
+// plot(bull_imbalence, color = color.rgb(255, 7, 7), linewidth = 2)
+// plot(bull_imbalence_simple, color = color.rgb(123, 38, 126, 8), linewidth = 2)
+// plot(bear_imbalence_simple, color = color.rgb(44, 54, 145, 7), linewidth = 2)
+
+
+
+//------------------------------------------------------------------------------------------------
+
+
+
+
+//required for BBW IMBALENCE 
+BBW_small_trade = input.float(0.01, minval = 0, title = "min trade dif small", group = "BBW", inline = "TP1") * 0.01
+//BBW_med_trade = input.float(0.02, minval = 0, title = "min trade dif medium", group = "BBW", inline = "TP1") * 0.01
+BBW_med_trade = BBW_small_trade
+//BBW_stop_loss = input.float(3, minval = 0, title = "Stop loss %", group = "BBW", inline = "TP1") * 0.01
+
+var float [] BBW_limitENtry_L = array.new_float(99,0)
+var float [] BBW_limitEntry_S = array.new_float(99,0)
+//BBW_entryLimit_offset = input.float(0.125, minval = 0, title = "LI ENT OF", group = "BBW", inline = "TP1") * 0.01
+
+var float [] BBW_LimitClose = array.new_float(10,0)
+
+var float [] BBW_L_SLline = array.new_float(2,0)
+var float [] BBW_S_SLline = array.new_float(2,0)
+
+//-------------------------------------------------------------------------------------------------------------------------------------
+
+// float bbwLev = 0
+// if MED_trades_allowed == 'yes'
+//     bbwLev := (math.max(math.round(strategy.equity * bbwleverage  / close , precision), 0)) / 2
+// else
+//     bbwLev := math.max(math.round(strategy.equity * bbwleverage  / close , precision), 0)
+
+SL_L_small_BBW = high * (1 + BBW_stop_loss)
+SL_L_med_BBW = high * (1 + BBW_stop_loss)
+//plot(SL_L_small_BBW, title = 'BBW SL short S', linewidth = 2, style =  plot.style_stepline, color=color.rgb(248, 71, 71, 80))
+//plot(SL_L_med_BBW, title = 'BBW SL short M', linewidth = 2, style =  plot.style_stepline, color=color.rgb(236, 248, 71, 100))
+
+//if (active1==1 and active1_bool==true) or (active2==1 and active2_bool==true) or (active3==1 and active3_bool==true) or (active3==1 and active3_bool==true) or (active4==1 and active4_bool==true) or (active5==1 and active5_bool==true) or (active6==1 and active6_bool==true) or (active7==1 and active7_bool==true)
+if BBW_active == 1 
+    if (not na(t1)) or (not na(t2)) or (not na(t3))
+        if BBW_SHORT_ALLOWED == 'yes'
+            //if array.get(OR_value,0) < M_line
+            if (active1==1 and bbwactive1_bool==true) or (active2==1 and bbwactive2_bool==true) or (active3==1 and bbwactive3_bool==true) or (active4==1 and bbwactive4_bool==true) or (active5==1 and bbwactive5_bool==true) or (active6==1 and bbwactive6_bool==true) or (active7==1 and bbwactive7_bool==true)
+                if (close > high[1] and ema_colour == color.rgb(255, 8, 0)) or (close > high[1] and ema_colour == color.rgb(247, 247, 247) and close < EMA_250)
+                    if no_active_small_trades_bbw == 1 //if str.contains(orderIds, 'Short') == false and str.contains(orderIds, 'Long') == false and array.get(bbwOrder_active, 2) == 0 and str.contains(orderIds, 'BBW S small') == false and str.contains(orderIds, 'BBW L small') == false and str.contains(orderIds, 'longVsmall') == false and str.contains(orderIds, 'short small') == false and str.contains(orderIds, 'long small') == false
+                        mid_L_small_BBW = (high[1] + close) * 0.5
+                        if mid_L_small_BBW < (close * (1 - BBW_small_trade))
+                            array.set(order_side, 0, 2)
+                            array.set(BBW_S_SLline, 0, SL_L_small_BBW)
+                            array.set(BBW_limitENtry_L, 0, close * (1 + BBW_entryLimit_offset))
+                            line.new(x1=bar_index, y1=open, x2=bar_index+5, y2=open, color = color.red, width = 3)
+                            bull_imbalence_simple := low * 0.98
+                            array.set(BBW_LimitClose, 0, open)
+                            array.set(bbwOrder_active, 2, 1)
+                            BBW_S_S_alert_message = str.tostring(array.get(BBW_LimitClose, 0))
+                            //strategy.order(id = 'BBW S small', direction=strategy.short, qty = bbwLev , limit = array.get(BBW_limitENtry_L, 0), stop = array.get(BBW_S_SLline, 0), alert_message = BBW_S_S_alert_message)
+                            //strategy.exit(id = "BBW S S C", from_entry= 'BBW S small', limit = array.get(BBW_LimitClose, 0), stop = array.get(BBW_S_SLline, 0))
+                            bbw1S := 1
+                            array.set(Wprice, 0, array.get(BBW_limitENtry_L, 0))
+                            array.set(SL_price, 0, array.get(BBW_S_SLline, 0))
+
+if close <= array.get(BBW_LimitClose, 0)
+    //strategy.cancel('BBW S small')
+    //strategy.close('BBW S small')
+    array.set(bbwOrder_active, 2, 0)
+
+// if close <= array.get(BBW_LimitClose, 1)
+//     //strategy.cancel('BBW S med')
+//     //strategy.close('BBW S med')
+//     array.set(bbwOrder_active, 3, 0)
+
+if str.contains(orderIds, 'BBW S small') == true
+    array.set(bbwOrder_active, 2, 0)
+
+//if str.contains(orderIds, 'BBW S med') == true
+    //array.set(bbwOrder_active, 3, 0)
+
+if high >= array.get(BBW_S_SLline, 0)
+    //strategy.cancel('BBW S small')
+    //strategy.close('BBW S small', 'BBW S S hard SL')
+    array.set(bbwOrder_active, 2, 0)
+
+// if high >= array.get(BBW_S_SLline, 1)
+//     //strategy.cancel('BBW S med')
+//     //strategy.close('BBW S med', 'BBW S M hard SL')
+//     array.set(bbwOrder_active, 3, 0)
+
+
+SL_S_SMALL_BBW = low * (1 - BBW_stop_loss)
+SL_S_MED_BBW = low * (1 - BBW_stop_loss)
+//plot(SL_S_SMALL_BBW, title = 'BBW SL long S', linewidth = 2, style =  plot.style_stepline, color=color.rgb(142, 248, 71, 80))
+//plot(SL_S_MED_BBW, title = 'BBW SL long M', linewidth = 2, style =  plot.style_stepline, color=color.rgb(71, 198, 248, 100))
+
+//if (active1==1 and active1_bool==true) or (active2==1 and active2_bool==true) or (active3==1 and active3_bool==true) or (active3==1 and active3_bool==true) or (active4==1 and active4_bool==true) or (active5==1 and active5_bool==true) or (active6==1 and active6_bool==true) or (active7==1 and active7_bool==true)
+if BBW_active == 1 
+    if (not na(t1)) or (not na(t2)) or (not na(t3))
+        if BBW_LONG_ALLOWED == 'yes'
+            if array.get(OR_value,0) < M_line
+                if (active1==1 and bbwactive1_bool==true) or (active2==1 and bbwactive2_bool==true) or (active3==1 and bbwactive3_bool==true) or (active4==1 and bbwactive4_bool==true) or (active5==1 and bbwactive5_bool==true) or (active6==1 and bbwactive6_bool==true) or (active7==1 and bbwactive7_bool==true)
+                    if (close < low[1] and ema_colour == color.rgb(0, 255, 8)) or (close < low[1] and ema_colour == color.rgb(247, 247, 247) and close > EMA_250)
+                        if no_active_small_trades_bbw == 1//if str.contains(orderIds, 'Short') == false and str.contains(orderIds, 'Long') == false and array.get(bbwOrder_active, 0) == 0 and str.contains(orderIds, 'BBW L small') == false and str.contains(orderIds, 'BBW S small') == false and str.contains(orderIds, 'longVsmall') == false and str.contains(orderIds, 'long small') == false and str.contains(orderIds, 'short small') == false
+                            MID_S_small_BBW = (low[1] + close) * 0.5
+                            if MID_S_small_BBW > (close * (BBW_small_trade + 1))
+                                array.set(order_side, 0, 1)
+                                array.set(BBW_L_SLline, 0, SL_S_SMALL_BBW)
+                                array.set(BBW_limitEntry_S, 0, close * (1 - BBW_entryLimit_offset))
+                                line.new(x1=bar_index, y1=open, x2=bar_index+5, y2=open, color = color.rgb(0, 81, 255), width = 3)
+                                bear_imbalence_simple := low * 0.98
+                                array.set(BBW_LimitClose, 2, open)
+                                array.set(bbwOrder_active, 0, 1)
+                                BBW_L_S_alert_message = str.tostring(array.get(BBW_LimitClose, 2))
+                                //strategy.order(id = 'BBW L small', direction=strategy.long, qty = bbwLev , limit = array.get(BBW_limitEntry_S, 0), stop = array.get(BBW_L_SLline, 0), alert_message = BBW_L_S_alert_message)
+                                //strategy.exit(id = "BBW L S C", from_entry= 'BBW L small', limit = array.get(BBW_LimitClose, 2), stop = array.get(BBW_L_SLline, 0))
+                                bbw1L := 1
+                                array.set(Wprice, 0, array.get(BBW_limitEntry_S, 0))
+                                array.set(SL_price, 0, array.get(BBW_L_SLline, 0))
+
+
+
+if str.contains(orderIds, 'BBW L small') == true
+    array.set(bbwOrder_active, 0, 0)
+
+if close >= array.get(BBW_LimitClose, 2)
+    //strategy.cancel('BBW L small')
+    //strategy.close('BBW L small')
+    array.set(bbwOrder_active, 0, 0)
+
+//if str.contains(orderIds, 'BBW L med') == true
+    //array.set(bbwOrder_active, 1, 0)
+
+// if close >= array.get(BBW_LimitClose, 3)
+//     //strategy.cancel('BBW L med')
+//     //strategy.close('BBW L med')
+//     array.set(bbwOrder_active, 1, 0)
+
+if low <= array.get(BBW_L_SLline, 0)
+    //strategy.cancel('BBW L small')
+    //strategy.close('BBW L small', 'BBW L S hard SL')
+    array.set(bbwOrder_active, 0, 0)
+
+// if low <= array.get(BBW_L_SLline, 1)
+//     //strategy.cancel('BBW L med')
+//     //strategy.close('BBW L med', 'BBW L M hard SL')
+//     array.set(bbwOrder_active, 1, 0)
+
+
+
+
+
+
+
+
+
+DCA_LONGS_ACTIVE = input.bool(true, "long dca" , group = "dca", inline = "smartjoe1")
+price_deviation = input.float(0.21, title='Price deviation to open safety orders (%)', step=0.1, minval=0.0, group = 'green')/100
+//take_profit = input.float(1.2, title='Target Take Profit (%)', step=0.1, minval=0.0)/100
+//base_order  = input.float(3, title='base order', group = 'green') 
+safe_order  = base_order * 2//input.float(6, title='safe order', group = 'green') 
+safe_order_volume_scale  = input.float(2, step=0.1, title='Safety order volume scale', group = 'green') 
+safe_order_step_scale  = input.float(1, step=0.1, title='Safety order step scale', group = 'green') 
+max_safe_order = input.float(4, title='max no. of safe orders', group = 'green') 
+
+var current_so = 0
+var initial_order = 0.0
+var soCount = 0
+var tradeCount = 0
+var take_profit_level = 0.0
+var tp_plot = 0.0
+var threshold = 0.0
+maxDev = 0.0
+var B = 0
+var avg_price = 0.0
+var total_funds_in_trade = 0.0
+var total_qty_in_trade = 0.0
+
+// Calculate our TP levels
+take_profit_level:= array.get(limitClose1, 2) //avg_price * (1 + take_profit)
+
+// First Position
+for B = 0 to max_safe_order - 1
+    maxDev := int((maxDev + (price_deviation* 100 * math.pow(safe_order_step_scale, B)))*100)/100
+
+open_normal_long_alert_1nd = 0
+
+norm_alert_long_dca1 = 0
+norm_alert_long_dca2 = 0
+norm_alert_long_dca3 = 0
+norm_alert_long_dca4 = 0
+norm_alert_long_dca5 = 0
+
+if DCA_LONGS_ACTIVE and close < array.get(limitEntry_short, 0) and array.get(normOrder_active, 2) == 1 //and c_trend == 1
+    if str.contains(orderIds, 'LSODCA') == false and str.contains(orderIds, 'SSODCA') == false //and str.contains(orderIds, 'SSOBBW') == false and str.contains(orderIds, 'LSOBBW') == false
+        strategy.entry("LSODCA", strategy.long, qty = (strategy.equity*base_order/100)/close)
+        initial_order := close
+        current_so := 1
+        avg_price := close
+        total_funds_in_trade := avg_price*base_order
+        total_qty_in_trade := base_order
+        open_normal_long_alert_1nd := 1
+        norm_alert_long_dca1 := 1
+
+//makes the red and green line plot pretty at the position opening
+if str.contains(orderIds, 'LSODCA') == false
+    threshold :=low[1]
+
+//Long
+if str.contains(orderIds, 'LSODCA') == true and B==0
+    if(safe_order_step_scale == 1.0)
+        threshold := initial_order - (initial_order * price_deviation * safe_order_step_scale * current_so)
+    else
+        threshold := initial_order - (initial_order * ((price_deviation * (math.pow(safe_order_step_scale, current_so) - 1)) / (safe_order_step_scale - 1)))
+
+// Average Down
+if current_so > 0 and B == 0 and low <= threshold and current_so <= max_safe_order and ht_ema_trend == 1
+    if str.contains(orderIds, 'LSODCA') == true
+        strategy.entry("LSODCA", strategy.long , qty = strategy.equity*safe_order/100* math.pow(safe_order_volume_scale,(current_so-1))/close)
+        total_funds_in_trade := total_funds_in_trade + threshold*safe_order*math.pow(safe_order_volume_scale, current_so-1)
+        total_qty_in_trade := total_qty_in_trade + safe_order*math.pow(safe_order_volume_scale, current_so-1)
+        avg_price := total_funds_in_trade/total_qty_in_trade
+        current_so := current_so + 1
+        tradeCount := tradeCount + 1
+        if current_so == 2
+            norm_alert_long_dca2 := 1
+        else if current_so == 3
+            norm_alert_long_dca3 := 1
+        else if current_so == 4
+            norm_alert_long_dca4 := 1
+        else if current_so == 5
+            norm_alert_long_dca5 := 1
+
+close_normal_long_TP_SL_alert = 0
+if low <= array.get(L_SLline, 0) and str.contains(orderIds, 'LSODCA') == true
+    strategy.close('LSODCA', comment = 'SL long')
+    soCount := current_so
+    current_so := 0
+    initial_order := 0.0
+    avg_price := na
+    array.set(normOrder_active, 2, 0)
+    close_normal_long_TP_SL_alert := 1
+
+if ht_ema_trend == -1 and str.contains(orderIds, 'LSODCA') == true
+    strategy.close('LSODCA', comment = 'SL long')
+    soCount := current_so
+    current_so := 0
+    initial_order := 0.0
+    avg_price := na
+    array.set(normOrder_active, 2, 0)
+    close_normal_long_TP_SL_alert := 1
+
+if take_profit_level <= close and str.contains(orderIds, 'LSODCA') == true
+    strategy.close('LSODCA', comment = 'TP long')
+    soCount := current_so
+    current_so := 0
+    initial_order := 0.0
+    avg_price := na
+    array.set(normOrder_active, 2, 0)
+    close_normal_long_TP_SL_alert := 1
+        
+if take_profit_level > 0
+    if str.contains(orderIds, 'LSODCA') == true
+        tp_plot := take_profit_level
+    else  
+        tp_plot := close
+else  
+    tp_plot := close
+
+
+
+//-------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+DCA_SHORTS_ACTIVE = input.bool(true, "shord dca" , group = "dca", inline = "smartjoe1")
+price_S_deviation = input.float(0.25, title='Price deviation to open short safety orders (%)', step=0.1, minval=0.0, group = 'dca')/100
+//take_S_profit = input.float(1.0, title='Short Target Take Profit (%)', step=0.1, minval=0.0)/100
+base_S_order  = base_order   //input.float(3, title='base sell order', group = 'dca') 
+safe_S_order  = base_order * 2 //input.float(6, title='safe sell order', group = 'dca') 
+safe_S_order_volume_scale  = input.float(2, step=0.1, title='Safety sell order volume scale', group = 'dca') 
+safe_S_order_step_scale  = input.float(1, step=0.1, title='Safety sell order step scale', group = 'dca') 
+max_S_safe_order = input.float(4, title='max no. of sell safe orders', group = 'dca') 
+
+var current_S_so = 0
+var initial_S_order = 0.0
+var firstBarTime_S = 0.0 
+var maxDiffDays_S = 0.0
+var soCount_S = 0
+var initial_S_price = 0.0
+var take_S_profit_level = 0.0
+var tp_S_plot = 0.0
+var S_threshold = 0.0
+maxSDev_S = 0.0
+var A = 0
+var avg_price_S = 0.0
+var total_funds_in_trade_S = 0.0
+var total_qty_in_trade_S = 0.0
+
+take_S_profit_level:= array.get(limitClose1, 0)  //avg_price_S * (1 - take_S_profit)
+
+for A = 0 to max_S_safe_order - 1
+    maxSDev_S := int((maxSDev_S + (price_S_deviation* 100 * math.pow(safe_S_order_step_scale, A)))*100)/100
+
+open_normal_short_alert_1nd = 0
+norm_alert_short_dca1 = 0
+norm_alert_short_dca2 = 0
+norm_alert_short_dca3 = 0
+norm_alert_short_dca4 = 0
+norm_alert_short_dca5 = 0
+
+if DCA_SHORTS_ACTIVE and close > array.get(limitEntry_long, 0) and array.get(normOrder_active, 0) == 1 //and c_trend == -1           //  long/short_trigger
+    if str.contains(orderIds, 'LSODCA') == false and str.contains(orderIds, 'SSODCA') == false //and str.contains(orderIds, 'SSOBBW') == false and str.contains(orderIds, 'LSOBBW') == false
+        strategy.entry("SSODCA", strategy.short, qty = (strategy.equity*base_S_order/100)/close)
+        initial_S_order := close
+        current_S_so := 1
+        firstBarTime_S := time
+        initial_S_price := close
+        avg_price_S := close
+        total_funds_in_trade_S := avg_price_S*base_S_order
+        total_qty_in_trade_S := base_S_order
+        open_normal_short_alert_1nd := 1
+        norm_alert_short_dca1 := 1
+
+//makes the red and green line plot pretty at the position opening
+if str.contains(orderIds, 'SSODCA') == false
+    S_threshold := high[1]
+
+//Short
+if str.contains(orderIds, 'SSODCA') == true and A==0
+    if safe_S_order_step_scale == 1.0
+        S_threshold := initial_S_order * (1 + price_S_deviation * current_S_so)
+    else
+        S_threshold := initial_S_order * (1 + ((price_S_deviation * (math.pow(safe_S_order_step_scale, current_S_so) - 1)) / (safe_S_order_step_scale - 1)))
+
+// Short Average Up
+if current_S_so > 0 and A==0 and high >= S_threshold and current_S_so <= max_S_safe_order and ht_ema_trend == -1
+    if str.contains(orderIds, 'SSODCA') == true
+        strategy.entry("SSODCA", strategy.short , qty = strategy.equity*safe_S_order/100* math.pow(safe_S_order_volume_scale,(current_S_so-1))/close)
+        total_funds_in_trade_S := total_funds_in_trade_S + S_threshold*safe_S_order*math.pow(safe_S_order_volume_scale, current_S_so-1)
+        total_qty_in_trade_S := total_qty_in_trade_S + safe_S_order*math.pow(safe_S_order_volume_scale, current_S_so-1)
+        avg_price_S := total_funds_in_trade_S/total_qty_in_trade_S
+        current_S_so := current_S_so + 1
+        if current_S_so == 2
+            norm_alert_short_dca2 := 1
+        else if current_S_so == 3
+            norm_alert_short_dca3 := 1
+        else if current_S_so == 4
+            norm_alert_short_dca4 := 1
+        else if current_S_so == 5
+            norm_alert_short_dca5 := 1
+
+//Take Short Profit!
+close_normal_short_TP_SL_alert = 0
+if take_S_profit_level >= close and str.contains(orderIds, 'SSODCA') == true
+    strategy.close('SSODCA', comment = 'TP short')
+    soCount_S := current_S_so
+    current_S_so := 0
+    initial_S_price:= na
+    initial_S_order := 0.0
+    avg_price_S := na
+    array.set(normOrder_active, 0, 0)
+    close_normal_short_TP_SL_alert := 1
+
+if high >= array.get(S_SLline, 0) and str.contains(orderIds, 'SSODCA') == true
+    strategy.close('SSODCA', comment = 'SL short')
+    soCount_S := current_S_so
+    current_S_so := 0
+    initial_S_price:= na
+    initial_S_order := 0.0
+    avg_price_S := na
+    array.set(normOrder_active, 0, 0)
+    close_normal_short_TP_SL_alert := 1
+
+if ht_ema_trend == 1 and str.contains(orderIds, 'SSODCA') == true
+    strategy.close('SSODCA', comment = 'SL short')
+    soCount_S := current_S_so
+    current_S_so := 0
+    initial_S_price:= na
+    initial_S_order := 0.0
+    avg_price_S := na
+    array.set(normOrder_active, 0, 0)
+    close_normal_short_TP_SL_alert := 1
+
+if take_S_profit_level > 0
+    if str.contains(orderIds, 'SSODCA') == true
+        tp_S_plot := take_S_profit_level
+    else
+        tp_S_plot := close
+else
+    tp_S_plot := close
+
+norm_activ = true
+if str.contains(orderIds, 'LSODCA') == true or str.contains(orderIds, 'SSODCA') == true
+    norm_activ := false
+
+p1 = plot(tp_plot, color = str.contains(orderIds, 'LSODCA') == true ? #00ff00:na)
+//p2 = plot(avg_price_S, color= strategy.position_size == 0 and norm_activ == true ? na : color.white)
+p3 = plot(threshold, color = str.contains(orderIds, 'LSODCA') == true? #ff0000:na)
+p4 = plot(tp_S_plot, color = str.contains(orderIds, 'SSODCA') == true? #00ff00:na)
+p5 = plot(S_threshold, color = str.contains(orderIds, 'SSODCA') == true? #ff0000:na)
+// fill(p1, p2, color=strategy.position_size > 0 ? color.rgb(76, 175, 79, 61) : na)
+// fill(p2, p3, color=strategy.position_size > 0 ? color.rgb(255, 82, 82, 54) : na)
+// fill(p4, p2, color=strategy.position_size < 0 ? color.rgb(76, 175, 79, 55) : na)
+// fill(p5, p2, color=strategy.position_size < 0 ? color.rgb(255, 82, 82, 57) : na)
+//profit_color = strategy.openprofit < 0 ? color.red : color.green
+
+
+
+
+
+//-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+DCA_LONGS_ACTIVE_L_BBW = input.bool(true, "BBW long dca" , group = "dca bbw L", inline = "smartjoe1")
+price_deviation_L_BBW = input.float(0.21, title='BBW Price deviation to open safety orders (%)', step=0.1, minval=0.0, group = 'dca bbw L')/100
+//take_profit = input.float(1.2, title='Target Take Profit (%)', step=0.1, minval=0.0)/100
+//base_order_L_BBW  = input.float(60, title='BBW base order', group = 'dca bbw L') 
+safe_order_L_BBW  = base_order_L_BBW //input.float(60, title='BBW safe order', group = 'dca bbw L') 
+safe_order_volume_scale_L_BBW  = input.float(1, step=0.1, title='BBW Safety order volume scale', group = 'dca bbw L') 
+safe_order_step_scale_L_BBW  = input.float(1, step=0.1, title='BBW Safety order step scale', group = 'dca bbw L') 
+max_safe_order_L_BBW = input.float(2, title='BBW max no. of safe orders', group = 'dca bbw L') 
+
+var current_so_L_BBW = 0
+var initial_order_L_BBW = 0.0
+var soCount_L_BBW = 0
+var tradeCount_L_BBW = 0
+var take_profit_level_L_BBW = 0.0
+var tp_plot_L_BBW = 0.0
+var threshold_L_BBW = 0.0
+maxDev_L_BBW = 0.0
+var i = 0
+var avg_price_L_BBW = 0.0
+var total_funds_in_trade_L_BBW = 0.0
+var total_qty_in_trade_L_BBW = 0.0
+
+minus_per_newBBW_order = input.float(0.05, title='-0.1 if new bbw order opens')/100
+
+// Calculate our TP levels
+take_profit_level_L_BBW:= (array.get(BBW_LimitClose, 2) * ((1 - (minus_per_newBBW_order * current_so_L_BBW) + minus_per_newBBW_order))) //array.get(BBW_LimitClose, 2) //avg_price_L_BBW * (1 + take_profit)
+
+// First Position
+for i = 0 to max_safe_order_L_BBW - 1
+    maxDev_L_BBW := int((maxDev_L_BBW + (price_deviation_L_BBW* 100 * math.pow(safe_order_step_scale_L_BBW, i)))*100)/100
+
+open_bbw_long_alert_1nd = 0
+
+if DCA_LONGS_ACTIVE_L_BBW and close < array.get(BBW_limitEntry_S, 0) and array.get(bbwOrder_active, 0) == 1
+    if str.contains(orderIds, 'SSOBBW') == false and str.contains(orderIds, 'LSOBBW') == false //and str.contains(orderIds, 'LSODCA') == false and str.contains(orderIds, 'SSODCA') == false
+        strategy.entry("LSOBBW", strategy.long, qty = (strategy.equity*base_order_L_BBW/100)/close)
+        initial_order_L_BBW := close
+        current_so_L_BBW := 1
+        avg_price_L_BBW := close
+        total_funds_in_trade_L_BBW := avg_price_L_BBW*base_order_L_BBW
+        total_qty_in_trade_L_BBW := base_order_L_BBW
+        open_bbw_long_alert_1nd := 1
+
+//makes the red and green line plot pretty at the position opening
+if str.contains(orderIds, 'LSOBBW') == false
+    threshold_L_BBW :=low[1]
+
+//Long
+if str.contains(orderIds, 'LSOBBW') == true  and i==0
+    if(safe_order_step_scale_L_BBW == 1.0)
+        threshold_L_BBW := initial_order_L_BBW - (initial_order_L_BBW * price_deviation_L_BBW * safe_order_step_scale_L_BBW * current_so_L_BBW)
+    else
+        threshold_L_BBW := initial_order_L_BBW - (initial_order_L_BBW * ((price_deviation_L_BBW * (math.pow(safe_order_step_scale_L_BBW, current_so_L_BBW) - 1)) / (safe_order_step_scale_L_BBW - 1)))
+
+// Average Down
+if current_so_L_BBW > 0 and i == 0 and close <= threshold_L_BBW and current_so_L_BBW <= max_safe_order_L_BBW
+    if str.contains(orderIds, 'LSOBBW') == true 
+        strategy.entry("LSOBBW", strategy.long , qty = strategy.equity*safe_order_L_BBW/100* math.pow(safe_order_volume_scale_L_BBW,(current_so_L_BBW-1))/close)
+        total_funds_in_trade_L_BBW := total_funds_in_trade_L_BBW + threshold_L_BBW*safe_order_L_BBW*math.pow(safe_order_volume_scale_L_BBW, current_so_L_BBW-1)
+        total_qty_in_trade_L_BBW := total_qty_in_trade_L_BBW + safe_order_L_BBW*math.pow(safe_order_volume_scale_L_BBW, current_so_L_BBW-1)
+        avg_price_L_BBW := total_funds_in_trade_L_BBW/total_qty_in_trade_L_BBW
+        current_so_L_BBW := current_so_L_BBW + 1
+        tradeCount_L_BBW := tradeCount_L_BBW + 1
+
+
+close_bbw_long_TP_SL_alert = 0
+if low <= array.get(BBW_L_SLline, 0) and str.contains(orderIds, 'LSOBBW') == true
+    strategy.close('LSOBBW', comment = 'SL long BBW')
+    strategy.close('Long dcaBBW', comment = 'SL long BBW') 
+    soCount_L_BBW := current_so_L_BBW
+    current_so_L_BBW := 0
+    initial_order_L_BBW := 0.0
+    avg_price_L_BBW := na
+    array.set(bbwOrder_active, 0, 0)
+    close_bbw_long_TP_SL_alert := 1
+
+if (na(t1)) and (na(t2)) and (na(t3)) and (na(t0)) and str.contains(orderIds, 'LSOBBW') == true
+    strategy.close('LSOBBW', comment = 'SL long BBW')
+    strategy.close('Long dcaBBW', comment = 'SL long BBW') 
+    soCount_L_BBW := current_so_L_BBW
+    current_so_L_BBW := 0
+    initial_order_L_BBW := 0.0
+    avg_price_L_BBW := na
+    array.set(bbwOrder_active, 0, 0)
+    close_bbw_long_TP_SL_alert := 1
+
+if take_profit_level_L_BBW <= high and str.contains(orderIds, 'LSOBBW') == true 
+    strategy.close('LSOBBW', comment = 'TP long BBW')
+    strategy.close('Long dcaBBW', comment = 'TP long BBW')  
+    soCount_L_BBW := current_so_L_BBW
+    current_so_L_BBW := 0
+    initial_order_L_BBW := 0.0
+    avg_price_L_BBW := na
+    array.set(bbwOrder_active, 0, 0)
+    close_bbw_long_TP_SL_alert := 1
+        
+if take_profit_level_L_BBW > 0
+    if str.contains(orderIds, 'LSOBBW') == true 
+        tp_plot_L_BBW := take_profit_level_L_BBW
+    else  
+        tp_plot_L_BBW := close
+else  
+    tp_plot_L_BBW := close
+
+
+//-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+DCA_SHORTS_ACTIVE_BBW = input.bool(true, "shord dca" , group = "dca bbw", inline = "smartjoe1")
+price_S_deviation_BBW = input.float(0.21, title='Price deviation to open short safety orders (%)', step=0.1, minval=0.0, group = 'dca bbw')/100
+//take_S_profit = input.float(1.0, title='Short Target Take Profit (%)', step=0.1, minval=0.0)/100
+base_S_order_BBW  = base_order_L_BBW  //input.float(60, title='base sell order', group = 'dca bbw') 
+safe_S_order_BBW  = base_order_L_BBW  //input.float(60, title='safe sell order', group = 'dca bbw') 
+safe_S_order_volume_scale_BBW  = input.float(1, step=0.1, title='Safety sell order volume scale', group = 'dca bbw') 
+safe_S_order_step_scale_BBW  = input.float(1, step=0.1, title='Safety sell order step scale', group = 'dca bbw') 
+max_S_safe_order_BBW = input.float(2, title='max no. of sell safe orders', group = 'dca bbw') 
+
+var current_S_so_BBW = 0
+var initial_S_order_BBW = 0.0
+var firstBarTime_S_BBW = 0.0 
+var maxDiffDays_S_BBW = 0.0
+var soCount_S_BBW = 0
+var initial_S_price_BBW = 0.0
+var take_S_profit_level_BBW = 0.0
+var tp_S_plot_BBW = 0.0
+var S_threshold_BBW = 0.0
+maxSDev_S_BBW = 0.0
+var C = 0
+var avg_price_S_BBW = 0.0
+var total_funds_in_trade_S_BBW = 0.0
+var total_qty_in_trade_S_BBW = 0.0
+
+take_S_profit_level_BBW:= (array.get(BBW_LimitClose, 0) * ((1 + (minus_per_newBBW_order * current_S_so_BBW) - minus_per_newBBW_order))) //array.get(BBW_LimitClose, 0)  //avg_price_S_BBW * (1 - take_S_profit)
+
+for C = 0 to max_S_safe_order_BBW - 1
+    maxSDev_S_BBW := int((maxSDev_S_BBW + (price_S_deviation_BBW* 100 * math.pow(safe_S_order_step_scale_BBW, C)))*100)/100
+
+open_bbw_short_alert_1nd = 0
+
+if DCA_SHORTS_ACTIVE_BBW and close > array.get(BBW_limitENtry_L, 0) and array.get(bbwOrder_active, 2) == 1//  long/short_trigger
+    if str.contains(orderIds, 'SSOBBW') == false and str.contains(orderIds, 'LSOBBW') == false //and str.contains(orderIds, 'LSODCA') == false and str.contains(orderIds, 'SSODCA') == false 
+        strategy.entry("SSOBBW", strategy.short, qty = (strategy.equity*base_S_order_BBW/100)/close)
+        initial_S_order_BBW := close
+        current_S_so_BBW := 1
+        firstBarTime_S_BBW := time
+        initial_S_price_BBW := close
+        avg_price_S_BBW := close
+        total_funds_in_trade_S_BBW := avg_price_S_BBW*base_S_order_BBW
+        total_qty_in_trade_S_BBW := base_S_order_BBW
+        open_bbw_short_alert_1nd := 1
+
+//makes the red and green line plot pretty at the position opening
+if str.contains(orderIds, 'SSOBBW') == false
+    S_threshold_BBW := high[1]
+
+//Short
+if str.contains(orderIds, 'SSOBBW') == true and C==0
+    if safe_S_order_step_scale_BBW == 1.0
+        S_threshold_BBW := initial_S_order_BBW * (1 + price_S_deviation_BBW * current_S_so_BBW)
+    else
+        S_threshold_BBW := initial_S_order_BBW * (1 + ((price_S_deviation_BBW * (math.pow(safe_S_order_step_scale_BBW, current_S_so_BBW) - 1)) / (safe_S_order_step_scale_BBW - 1)))
+
+// Short Average Up
+if current_S_so_BBW > 0 and C==0 and close >= S_threshold_BBW and current_S_so_BBW <= max_S_safe_order_BBW 
+    if str.contains(orderIds, 'SSOBBW') == true
+        strategy.entry("SSOBBW", strategy.short , qty = strategy.equity*safe_S_order_BBW/100* math.pow(safe_S_order_volume_scale_BBW,(current_S_so_BBW-1))/close)
+        total_funds_in_trade_S_BBW := total_funds_in_trade_S_BBW + S_threshold_BBW*safe_S_order_BBW*math.pow(safe_S_order_volume_scale_BBW, current_S_so_BBW-1)
+        total_qty_in_trade_S_BBW := total_qty_in_trade_S_BBW + safe_S_order_BBW*math.pow(safe_S_order_volume_scale_BBW, current_S_so_BBW-1)
+        avg_price_S_BBW := total_funds_in_trade_S_BBW/total_qty_in_trade_S_BBW
+        current_S_so_BBW := current_S_so_BBW + 1
+
+
+close_bbw_short_TP_SL_alert = 0
+if high >= array.get(BBW_S_SLline, 0) and (na(t0)) and str.contains(orderIds, 'SSOBBW') == true
+    //if strategy.position_size < 0
+    strategy.close('SSOBBW', comment = 'SL short BBW')
+    strategy.close('Short dca bbw', comment = 'SL short BBW')  
+    soCount_S_BBW := current_S_so_BBW
+    current_S_so_BBW := 0
+    initial_S_price_BBW:= na
+    initial_S_order_BBW := 0.0
+    avg_price_S_BBW := na
+    array.set(bbwOrder_active, 2, 0)
+    close_bbw_short_TP_SL_alert := 1
+
+if (na(t1)) and (na(t2)) and (na(t3)) and (na(t0)) and str.contains(orderIds, 'SSOBBW') == true
+    //if strategy.position_size < 0
+    strategy.close('SSOBBW', comment = 'SL short BBW')
+    strategy.close('Short dca bbw', comment = 'SL short BBW')  
+    soCount_S_BBW := current_S_so_BBW
+    current_S_so_BBW := 0
+    initial_S_price_BBW:= na
+    initial_S_order_BBW := 0.0
+    avg_price_S_BBW := na
+    array.set(bbwOrder_active, 2, 0)
+    close_bbw_short_TP_SL_alert := 1
+    
+//Take Short Profit!
+if take_S_profit_level_BBW >= low and str.contains(orderIds, 'SSOBBW') == true
+    //if strategy.position_size < 0
+    strategy.close('SSOBBW', comment = 'TP short BBW')
+    strategy.close('Short dca bbw', comment = 'TP short BBW')  
+    soCount_S_BBW := current_S_so_BBW
+    current_S_so_BBW := 0
+    initial_S_price_BBW:= na
+    initial_S_order_BBW := 0.0
+    avg_price_S_BBW := na
+    array.set(bbwOrder_active, 2, 0)
+    close_bbw_short_TP_SL_alert := 1
+
+
+if take_S_profit_level_BBW > 0
+    if str.contains(orderIds, 'SSOBBW') == true
+        tp_S_plot_BBW := take_S_profit_level_BBW
+    else
+        tp_S_plot_BBW := close
+else
+    tp_S_plot_BBW := close
+
+
+bbw_activ = true
+if str.contains(orderIds, 'SSOBBW') == true or str.contains(orderIds, 'LSOBBW') == true
+    bbw_activ := false
+
+p1_BBW = plot(tp_plot_L_BBW, color = str.contains(orderIds, 'LSOBBW') == true?  #00ff00:na)
+//p2_BBW = plot(avg_price_S_BBW, color= strategy.position_size == 0 and bbw_activ == true? na : color.white:na)
+p3_BBW = plot(threshold_L_BBW, color = str.contains(orderIds, 'LSOBBW') == true?  #ff0000:na)
+p4_BBW = plot(tp_S_plot_BBW, color = str.contains(orderIds, 'SSOBBW') == true?  #00ff00:na)
+p5_BBW = plot(S_threshold_BBW, color = str.contains(orderIds, 'SSOBBW') == true?  #ff0000:na)
+
+
+
+
+
+
+var float side1 = 0
+var float side2 = 0
+var float side3 = 0
+var float TP1 = 0
+var float TP2 = 0
+var float TP3 = 0
+var float SL1 = 0
+var float SL2 = 0
+var float SL3 = 0
+
+if str.contains(orderIds, 'LSODCA') == true
+    side1 := 1
+    TP1 := tp_plot
+    SL1 := array.get(L_SLline, 0)
+else
+    if str.contains(orderIds, 'SSODCA') == true
+        side1 := -1
+        TP1 := tp_S_plot
+        SL1 := array.get(S_SLline, 0)
+    else
+        TP1 := 0
+        SL1 := 0
+        side1 := 0
+
+if str.contains(orderIds, 'LSOBBW') == true
+    side2 := 1
+    TP2 := tp_plot_L_BBW
+    SL2 := array.get(BBW_L_SLline, 0)
+else
+    if str.contains(orderIds, 'SSOBBW') == true
+        side2 := -1
+        TP2 := tp_S_plot_BBW
+        SL2 := array.get(BBW_S_SLline, 0)
+    else
+        TP2 := 0
+        SL2 := 0 
+        side2 := 0
+
+if str.contains(orderIds, 'LSOOI') == true
+    side3 := 1
+    TP3 := 0
+    SL3 := 0
+else
+    if str.contains(orderIds, 'SSOOI') == true
+        side3 := -1
+        TP3 := 0
+        SL3 := 0
+    else
+        TP3 := 0
+        SL3 := 0
+        side3 := 0
+
+var float EMA = 0
+// if ht_ema_trend_OI == -1
+//     EMA := -1
+
+// if ht_ema_trend_OI == 1
+//     EMA := 1
+
+if ht_ema_trend == -1
+    EMA := -1
+
+if ht_ema_trend == 1
+    EMA := 1
+
+
+
+_passphrase = 'example'
+
+//customalert(_passphrase) =>//, _symbol, _type, _asset_type, _action, _risk_value, _risk_percent, _sl, _tp1,_tp1_percent, _tp2, _tp2_percent, _message) =>
+
+alert_array = array.new_string()
+if _passphrase != ''
+    array.push(alert_array, '"passphrase": "' + _passphrase + '"')
+//if _symbol != ''
+    array.push(alert_array, '"side1": "' + str.tostring(side1) + '"')
+//if _type != ''
+    array.push(alert_array, '"side2": "' + str.tostring(side2) + '"')
+//if _asset_type != ''
+    array.push(alert_array, '"side3": "' + str.tostring(side3) + '"')
+//if _action != ''
+    array.push(alert_array, '"TP1": "' + str.tostring(TP1) + '"')
+//if _risk_value != 0
+    array.push(alert_array, '"TP2": "' +str.tostring(TP2) + '"')
+//if _risk_percent != 0
+    array.push(alert_array, '"TP3": "' + str.tostring(TP3) + '"')
+//if _tp1 != 0
+    array.push(alert_array, '"SL1": "' + str.tostring(SL1) + '"')
+//if _tp1_percent != 0
+    array.push(alert_array, '"SL2": "' + str.tostring(SL2) + '"')
+//if _tp2 != 0
+    array.push(alert_array, '"SL3": "' + str.tostring(SL3) + '"')
+//if _tp2_percent != 0
+    array.push(alert_array, '"EMA": "' + str.tostring(EMA) + '"')
+
+    
+alertstring = '{' + array.join(alert_array,', ') + '}'
+
+alert(alertstring, alert.freq_all)
+
+
+
+
