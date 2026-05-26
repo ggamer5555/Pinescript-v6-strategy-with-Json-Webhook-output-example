@@ -1,6 +1,10 @@
 # Pinescript-v6-strategy-with-Json-Webhook-output-example
 This PineScript V6 program places dollar cost averaging trades for 2 different strategies and uses arrays of arrays to store data. The strategies compute a signal with TP and SL with a passphrase for the receiving server to accept for security, then send the Json format Webhook with alert feature for the strategy.
 
+I have also provided code so the webhook is sent to a Flask server, then the data is stored in SQLite files. These SQLite files are then read by a Python program that places trades on the MT5 application!
+
+I personally used this trading strategy for about 5 months with lucky positive results, as I was a newbie to trading!
+
 EXAMPLE code only as this strategy was probably overfit when I made it as a beginner, so only learn from the code, please!
 
 # LIVE ALERTS PYTH MT5 — TradingView Webhook Strategy
